@@ -132,6 +132,9 @@ dependencyCheck {
     failBuildOnCVSS = 7.0f
     formats = listOf("XML", "SARIF", "HTML")
     suppressionFile = "config/owasp/suppression.xml"
+    nvd {
+        apiKey = System.getenv("NVD_API_KEY") ?: ""
+    }
 }
 
 // ── check task gate ─────────────────────────────────────────────────────────

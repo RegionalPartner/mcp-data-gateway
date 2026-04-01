@@ -23,6 +23,9 @@ COPY --from=extractor /app/spring-boot-loader/ ./
 COPY --from=extractor /app/snapshot-dependencies/ ./
 COPY --from=extractor /app/application/ ./
 
+RUN addgroup -g 1000 spring && adduser -u 1000 -G spring -s /bin/sh -D spring
+USER 1000:1000
+
 EXPOSE 8080
 
 ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
