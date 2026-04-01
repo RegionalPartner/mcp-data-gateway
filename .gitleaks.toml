@@ -1,0 +1,6 @@
+[allowlist]
+  description = "Demo project known false positives"
+  paths = [
+    "k8s/app/secret.template.yaml",
+    "src/main/resources/db/V2__seed.sql"
+  ]
