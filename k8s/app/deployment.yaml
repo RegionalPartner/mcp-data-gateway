@@ -15,6 +15,18 @@ spec:
       labels:
         app: mcp-gateway
     spec:
+      serviceAccountName: mcp-gateway
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
       containers:
         - name: mcp-gateway
           image: ghcr.io/ancoris/mcp-data-gateway:latest
@@ -61,6 +73,8 @@ spec:
                 configMapKeyRef:
                   name: mcp-gateway-config
                   key: minio-bucket
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Djava.io.tmpdir=/tmp"
           readinessProbe:
             httpGet:
               path: /actuator/health
@@ -82,3 +96,11 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp

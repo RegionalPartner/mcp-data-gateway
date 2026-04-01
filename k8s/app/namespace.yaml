@@ -4,3 +4,4 @@ metadata:
   name: mcp-demo
   labels:
     app: mcp-data-gateway
+    kubernetes.io/metadata.name: mcp-demo
