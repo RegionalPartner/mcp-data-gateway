@@ -1,30 +1,33 @@
 package io.ancoris.mcp.integration;
 
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
-@Testcontainers
 public abstract class AbstractIntegrationTest {
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("mcpgateway")
-            .withUsername("testuser")
-            .withPassword("testpass");
+    // Singleton containers — started once per JVM, never stopped between test classes.
+    // This prevents Spring context cache misses when @Container stops/restarts containers
+    // and the cached context points at a dead port.
+    static final PostgreSQLContainer<?> POSTGRES;
+    static final MinIOContainer MINIO;
 
-    @Container
-    static final MinIOContainer MINIO = new MinIOContainer("minio/minio:latest")
-            .withUserName("minioadmin")
-            .withPassword("minioadmin");
+    static {
+        POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
+                .withDatabaseName("mcpgateway")
+                .withUsername("testuser")
+                .withPassword("testpass");
+        MINIO = new MinIOContainer("minio/minio:latest")
+                .withUserName("minioadmin")
+                .withPassword("minioadmin");
+        POSTGRES.start();
+        MINIO.start();
+    }
 
     @DynamicPropertySource
     static void overrideProperties(DynamicPropertyRegistry registry) {

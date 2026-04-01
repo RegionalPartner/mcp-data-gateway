@@ -39,19 +39,17 @@ class ApiKeyFilterIT extends AbstractIntegrationTest {
 
     @Test
     void validReadOnlyKey_returns200() throws Exception {
-        mockMvc.perform(post("/mcp/message")
-                       .header("X-API-Key", "demo-readonly-key-001")
-                       .contentType(MediaType.APPLICATION_JSON)
-                       .content(MCP_TOOLS_LIST))
+        // Use /actuator/info (requires auth, no MCP session needed) to verify the filter
+        // lets valid keys through. /mcp/message requires a pre-established session ID.
+        mockMvc.perform(get("/actuator/info")
+                       .header("X-API-Key", "demo-readonly-key-001"))
                .andExpect(status().isOk());
     }
 
     @Test
     void validAdminKey_returns200() throws Exception {
-        mockMvc.perform(post("/mcp/message")
-                       .header("X-API-Key", "demo-admin-key-001")
-                       .contentType(MediaType.APPLICATION_JSON)
-                       .content(MCP_TOOLS_LIST))
+        mockMvc.perform(get("/actuator/info")
+                       .header("X-API-Key", "demo-admin-key-001"))
                .andExpect(status().isOk());
     }
 
