@@ -1,0 +1,22 @@
+# Bitnami MinIO Helm chart overrides
+# Install: helm upgrade --install minio oci://registry-1.docker.io/bitnamicharts/minio \
+#   -f k8s/deps/minio-values.yaml --set auth.rootPassword=$MINIO_PASSWORD -n mcp-demo
+
+auth:
+  rootUser: minioadmin
+  rootPassword: ""  # set via --set auth.rootPassword=$MINIO_PASSWORD
+
+mode: standalone
+
+defaultBuckets: "mcp-documents"
+
+persistence:
+  size: 10Gi
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 250m
+  limits:
+    memory: 1Gi
+    cpu: 500m

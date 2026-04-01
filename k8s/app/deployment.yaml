@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-gateway
+  namespace: mcp-demo
+  labels:
+    app: mcp-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mcp-gateway
+  template:
+    metadata:
+      labels:
+        app: mcp-gateway
+    spec:
+      containers:
+        - name: mcp-gateway
+          image: ghcr.io/ancoris/mcp-data-gateway:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              valueFrom:
+                configMapKeyRef:
+                  name: mcp-gateway-config
+                  key: spring-profiles-active
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-gateway-secrets
+                  key: db-url
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-gateway-secrets
+                  key: db-user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-gateway-secrets
+                  key: db-password
+            - name: MINIO_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: mcp-gateway-config
+                  key: minio-endpoint
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-gateway-secrets
+                  key: minio-access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-gateway-secrets
+                  key: minio-secret-key
+            - name: MINIO_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: mcp-gateway-config
+                  key: minio-bucket
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

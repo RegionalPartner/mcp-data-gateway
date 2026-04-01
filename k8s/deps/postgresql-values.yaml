@@ -1,0 +1,24 @@
+# Bitnami PostgreSQL Helm chart overrides
+# Install: helm upgrade --install postgresql oci://registry-1.docker.io/bitnamicharts/postgresql \
+#   -f k8s/deps/postgresql-values.yaml --set auth.password=$PG_PASSWORD -n mcp-demo --create-namespace
+
+auth:
+  database: mcpgateway
+  username: mcpuser
+  password: ""  # set via --set auth.password=$PG_PASSWORD
+
+primary:
+  persistence:
+    size: 5Gi
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+  initdb:
+    scripts: {}  # Flyway handles schema migrations
+
+metrics:
+  enabled: false
