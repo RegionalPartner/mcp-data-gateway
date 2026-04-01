@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars and fill values — terraform.tfvars is gitignored
+ovh_project_id         = "YOUR_OVH_PROJECT_ID"
+ovh_application_key    = "YOUR_APPLICATION_KEY"
+ovh_application_secret = "YOUR_APPLICATION_SECRET"
+ovh_consumer_key       = "YOUR_CONSUMER_KEY"
