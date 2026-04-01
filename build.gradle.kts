@@ -2,6 +2,12 @@ import com.github.spotbugs.snom.Confidence
 import com.github.spotbugs.snom.Effort
 import com.github.spotbugs.snom.SpotBugsTask
 
+buildscript {
+    dependencies {
+        classpath("org.springframework.security:spring-security-crypto:6.3.3")
+    }
+}
+
 plugins {
     java
     id("org.springframework.boot") version "3.5.0"
@@ -24,7 +30,7 @@ java {
 dependencyManagement {
     imports {
         mavenBom("org.springframework.ai:spring-ai-bom:2.0.0-M2")
-        mavenBom("org.testcontainers:testcontainers-bom:1.19.8")
+        mavenBom("org.testcontainers:testcontainers-bom:1.20.4")
     }
 }
 
@@ -67,6 +73,7 @@ dependencies {
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
+    testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
     testImplementation("org.testcontainers:minio")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -77,6 +84,10 @@ tasks.test {
     useJUnitPlatform {
         excludeTags("integration")
     }
+    // shaded docker-java in Testcontainers reads "api.version" system property
+    // Docker Engine 26+ requires >= 1.40; docker-java defaults to 1.32
+    jvmArgs("-Dapi.version=1.41")
+    environment("DOCKER_HOST", "unix:///var/run/docker.sock")
     finalizedBy(tasks.jacocoTestReport)
 }
 
@@ -132,9 +143,7 @@ dependencyCheck {
     failBuildOnCVSS = 7.0f
     formats = listOf("XML", "SARIF", "HTML")
     suppressionFile = "config/owasp/suppression.xml"
-    nvd {
-        apiKey = System.getenv("NVD_API_KEY") ?: ""
-    }
+    nvd.apiKey = System.getenv("NVD_API_KEY") ?: ""
 }
 
 // ── check task gate ─────────────────────────────────────────────────────────
@@ -144,4 +153,18 @@ tasks.check {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+tasks.register("verifyHashes") {
+    doLast {
+        val enc = org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(12)
+        val hash1 = "\$2a\$12\$KjSltdyBNKZ7bZ7habe1meKexuEliqEElwocLKsjJ5WEJzfHl65tS"
+        val hash2 = "\$2a\$12\$zh883gLsNBA58UHbsTmlw.lq2GwpOzv2KlfNVCOrDH6eeKGhigcyS"
+        println("hash1 matches demo-readonly-key-001: ${enc.matches("demo-readonly-key-001", hash1)}")
+        println("hash2 matches demo-admin-key-001: ${enc.matches("demo-admin-key-001", hash2)}")
+        if (!enc.matches("demo-readonly-key-001", hash1)) {
+            println("NEW hash for demo-readonly-key-001: ${enc.encode("demo-readonly-key-001")}")
+            println("NEW hash for demo-admin-key-001: ${enc.encode("demo-admin-key-001")}")
+        }
+    }
 }

@@ -2,8 +2,8 @@
 -- READ_ONLY key: demo-readonly-key-001
 -- ADMIN key:     demo-admin-key-001
 INSERT INTO api_keys (key_hash, label, role)
-VALUES ('$2a$12$WkJWGPvVdh6YZiXhcMhkIuFOz1Y9mVqJnJtlFW3nGn5WZSD7lXGLi', 'Demo Read-Only Client', 'READ_ONLY'),
-       ('$2a$12$9DXqPKbqzaIRuM0u5K1QFeJFGn2mEhlqTSfLKJt7WGe3fCRdAvzm.', 'Demo Admin Client',     'ADMIN');
+VALUES ('$2a$12$KjSltdyBNKZ7bZ7habe1meKexuEliqEElwocLKsjJ5WEJzfHl65tS', 'Demo Read-Only Client', 'READ_ONLY'),
+       ('$2a$12$zh883gLsNBA58UHbsTmlw.lq2GwpOzv2KlfNVCOrDH6eeKGhigcyS', 'Demo Admin Client',     'ADMIN');
 
 -- Employees (salary visible to ADMIN only)
 INSERT INTO employees (name, department, email, salary)

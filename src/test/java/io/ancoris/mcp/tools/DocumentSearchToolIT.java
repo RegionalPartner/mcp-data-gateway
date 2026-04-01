@@ -12,6 +12,7 @@ import io.minio.PutObjectArgs;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.ByteArrayInputStream;
@@ -22,6 +23,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DocumentSearchToolIT extends AbstractIntegrationTest {
 
     private static final String TEST_BUCKET = "mcp-test-documents";
