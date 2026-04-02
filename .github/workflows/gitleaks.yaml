@@ -9,6 +9,9 @@ jobs:
   gitleaks:
     name: Detect Secrets with Gitleaks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read  # required by gitleaks-action@v2 to list PR commits
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
