@@ -12,6 +12,10 @@ minio:
   secret-key: minioadmin
   bucket: mcp-documents
 
+mcp:
+  security:
+    enforce-tls: false  # dev uses plain HTTP — TLS validation disabled
+
 logging:
   level:
     io.ancoris.mcp: DEBUG

@@ -43,7 +43,7 @@ class DatabaseQueryToolIT extends AbstractIntegrationTest {
     void queryEmployees_asReadOnly_returnsRowsWithoutSalary() {
         secHelper.authenticateAs("demo-readonly-key-001", apiKeyRepository);
 
-        List<Map<String, Object>> rows = databaseQueryTool.queryDatabase("employees", null);
+        List<Map<String, Object>> rows = databaseQueryTool.queryDatabase("employees", null, null);
 
         assertThat(rows).isNotEmpty();
         rows.forEach(row -> assertThat(row).doesNotContainKey("salary"));
@@ -57,7 +57,7 @@ class DatabaseQueryToolIT extends AbstractIntegrationTest {
     void queryEmployees_asAdmin_returnsSalaryColumn() {
         secHelper.authenticateAs("demo-admin-key-001", apiKeyRepository);
 
-        List<Map<String, Object>> rows = databaseQueryTool.queryDatabase("employees", null);
+        List<Map<String, Object>> rows = databaseQueryTool.queryDatabase("employees", null, null);
 
         assertThat(rows).isNotEmpty();
         rows.forEach(row -> assertThat(row).containsKey("salary"));
@@ -72,7 +72,7 @@ class DatabaseQueryToolIT extends AbstractIntegrationTest {
         secHelper.authenticateAs("demo-readonly-key-001", apiKeyRepository);
 
         List<Map<String, Object>> rows = databaseQueryTool.queryDatabase(
-                "employees", Map.of("department", "IT"));
+                "employees", Map.of("department", "IT"), null);
 
         assertThat(rows).hasSize(2);
         assertThat(rows).extracting(r -> (String) r.get("name"))
@@ -87,7 +87,7 @@ class DatabaseQueryToolIT extends AbstractIntegrationTest {
     void queryDocumentChunks_returnsExpectedColumns() {
         secHelper.authenticateAs("demo-readonly-key-001", apiKeyRepository);
 
-        List<Map<String, Object>> rows = databaseQueryTool.queryDatabase("document_chunks", null);
+        List<Map<String, Object>> rows = databaseQueryTool.queryDatabase("document_chunks", null, null);
 
         assertThat(rows).isNotEmpty();
         Map<String, Object> first = rows.get(0);
@@ -102,9 +102,10 @@ class DatabaseQueryToolIT extends AbstractIntegrationTest {
     void queryForbiddenTable_throwsException() {
         secHelper.authenticateAs("demo-readonly-key-001", apiKeyRepository);
 
-        assertThatThrownBy(() -> databaseQueryTool.queryDatabase("audit_logs", null))
+        // SEC-012: message is generic "Access denied" — no table name leaked
+        assertThatThrownBy(() -> databaseQueryTool.queryDatabase("audit_logs", null, null))
                 .isInstanceOf(SecurityException.class)
-                .hasMessageContaining("audit_logs");
+                .hasMessage("Access denied");
     }
 
     // -----------------------------------------------------------------------
@@ -116,7 +117,7 @@ class DatabaseQueryToolIT extends AbstractIntegrationTest {
         secHelper.authenticateAs("demo-readonly-key-001", apiKeyRepository);
 
         assertThatThrownBy(() ->
-                databaseQueryTool.queryDatabase("employees; DROP TABLE employees;--", null))
+                databaseQueryTool.queryDatabase("employees; DROP TABLE employees;--", null, null))
                 .isInstanceOf(SecurityException.class);
     }
 
@@ -132,12 +133,12 @@ class DatabaseQueryToolIT extends AbstractIntegrationTest {
         // but the employees table survives intact.
         List<Map<String, Object>> injectionResult = databaseQueryTool.queryDatabase(
                 "employees",
-                Map.of("name", "'; DROP TABLE employees; --"));
+                Map.of("name", "'; DROP TABLE employees; --"), null);
 
         assertThat(injectionResult).isEmpty();
 
         // Verify the table is still queryable
-        List<Map<String, Object>> rows = databaseQueryTool.queryDatabase("employees", null);
+        List<Map<String, Object>> rows = databaseQueryTool.queryDatabase("employees", null, null);
         assertThat(rows).isNotEmpty();
     }
 
@@ -150,7 +151,7 @@ class DatabaseQueryToolIT extends AbstractIntegrationTest {
         secHelper.authenticateAs("demo-readonly-key-001", apiKeyRepository);
 
         long countBefore = auditLogRepository.count();
-        databaseQueryTool.queryDatabase("employees", null);
+        databaseQueryTool.queryDatabase("employees", null, null);
 
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> {
             long countAfter = auditLogRepository.count();
