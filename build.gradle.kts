@@ -67,6 +67,9 @@ dependencies {
     // MinIO S3-compatible storage
     implementation("io.minio:minio:8.5.9")
 
+    // In-memory cache for API key list (SEC-003)
+    implementation("com.github.ben-manes.caffeine:caffeine")
+
     // SpotBugs security plugin
     spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.12.0")
 
@@ -155,16 +158,21 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+// SEC-023: key values must come from env vars — never hardcoded in source
 tasks.register("verifyHashes") {
     doLast {
         val enc = org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(12)
         val hash1 = "\$2a\$12\$KjSltdyBNKZ7bZ7habe1meKexuEliqEElwocLKsjJ5WEJzfHl65tS"
         val hash2 = "\$2a\$12\$zh883gLsNBA58UHbsTmlw.lq2GwpOzv2KlfNVCOrDH6eeKGhigcyS"
-        println("hash1 matches demo-readonly-key-001: ${enc.matches("demo-readonly-key-001", hash1)}")
-        println("hash2 matches demo-admin-key-001: ${enc.matches("demo-admin-key-001", hash2)}")
-        if (!enc.matches("demo-readonly-key-001", hash1)) {
-            println("NEW hash for demo-readonly-key-001: ${enc.encode("demo-readonly-key-001")}")
-            println("NEW hash for demo-admin-key-001: ${enc.encode("demo-admin-key-001")}")
+        val key1 = System.getenv("DEMO_READONLY_KEY")
+            ?: error("Set DEMO_READONLY_KEY env var — never put raw key values in source")
+        val key2 = System.getenv("DEMO_ADMIN_KEY")
+            ?: error("Set DEMO_ADMIN_KEY env var — never put raw key values in source")
+        println("hash1 matches DEMO_READONLY_KEY: ${enc.matches(key1, hash1)}")
+        println("hash2 matches DEMO_ADMIN_KEY: ${enc.matches(key2, hash2)}")
+        if (!enc.matches(key1, hash1)) {
+            println("NEW hash for DEMO_READONLY_KEY: ${enc.encode(key1)}")
+            println("NEW hash for DEMO_ADMIN_KEY: ${enc.encode(key2)}")
         }
     }
 }

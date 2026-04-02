@@ -38,6 +38,13 @@ management:
 
 server:
   port: 8080
+  error:
+    include-message: never      # SEC-012: never expose exception messages to clients
+    include-stacktrace: never
+
+mcp:
+  security:
+    enforce-tls: true   # SEC-010: set false only in dev/test profiles
 
 logging:
   level:

@@ -1,6 +1,5 @@
--- Demo API keys (bcrypt hash of the raw key values shown in README)
--- READ_ONLY key: demo-readonly-key-001
--- ADMIN key:     demo-admin-key-001
+-- Demo API keys — raw key values are stored only in the secrets vault.
+-- Regenerate hashes with: DEMO_READONLY_KEY=<key> DEMO_ADMIN_KEY=<key> ./gradlew verifyHashes
 INSERT INTO api_keys (key_hash, label, role)
 VALUES ('$2a$12$KjSltdyBNKZ7bZ7habe1meKexuEliqEElwocLKsjJ5WEJzfHl65tS', 'Demo Read-Only Client', 'READ_ONLY'),
        ('$2a$12$zh883gLsNBA58UHbsTmlw.lq2GwpOzv2KlfNVCOrDH6eeKGhigcyS', 'Demo Admin Client',     'ADMIN');

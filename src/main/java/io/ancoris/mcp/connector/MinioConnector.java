@@ -15,6 +15,7 @@ public class MinioConnector {
 
     private static final Logger log = LoggerFactory.getLogger(MinioConnector.class);
     private static final int MAX_FRAGMENT_CHARS = 500;
+    private static final String ALLOWED_KEY_PREFIX = "chunks/";
 
     private final MinioClient minioClient;
     private final String bucket;
@@ -34,6 +35,11 @@ public class MinioConnector {
      */
     @SuppressWarnings("unchecked")
     public String fetchChunk(String minioKey) {
+        // SEC-019: reject keys that are missing the expected prefix or contain path traversal
+        if (minioKey == null || !minioKey.startsWith(ALLOWED_KEY_PREFIX) || minioKey.contains("..")) {
+            log.warn("Rejected suspicious MinIO key: {}", minioKey);
+            return "";
+        }
         try (InputStream stream = minioClient.getObject(
                 GetObjectArgs.builder().bucket(bucket).object(minioKey).build())) {
             Map<String, Object> chunk = objectMapper.readValue(stream, Map.class);

@@ -38,16 +38,18 @@ class ApiKeyFilterIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void validReadOnlyKey_returns200() throws Exception {
-        // Use /actuator/info (requires auth, no MCP session needed) to verify the filter
-        // lets valid keys through. /mcp/message requires a pre-established session ID.
+    void validReadOnlyKey_actuatorInfoRequiresAdminRole() throws Exception {
+        // SEC-015: /actuator/** requires ADMIN — a valid READ_ONLY key is authenticated (not 401)
+        // but rejected with 403 (not 200). This verifies both that the filter passes the key
+        // and that the role restriction is enforced.
         mockMvc.perform(get("/actuator/info")
                        .header("X-API-Key", "demo-readonly-key-001"))
-               .andExpect(status().isOk());
+               .andExpect(status().isForbidden());
     }
 
     @Test
-    void validAdminKey_returns200() throws Exception {
+    void validAdminKey_actuatorInfoReturns200() throws Exception {
+        // SEC-015: ADMIN keys can still access /actuator/**
         mockMvc.perform(get("/actuator/info")
                        .header("X-API-Key", "demo-admin-key-001"))
                .andExpect(status().isOk());

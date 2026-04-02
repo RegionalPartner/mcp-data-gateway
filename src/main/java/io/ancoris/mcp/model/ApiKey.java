@@ -25,6 +25,16 @@ public class ApiKey {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    // SEC-001: lifecycle fields
+    @Column(name = "expires_at")
+    private Instant expiresAt;
+
+    @Column(name = "revoked", nullable = false)
+    private boolean revoked;
+
+    @Column(name = "last_used_at")
+    private Instant lastUsedAt;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = Instant.now();
@@ -35,4 +45,7 @@ public class ApiKey {
     public String getLabel() { return label; }
     public AccessRole getRole() { return role; }
     public Instant getCreatedAt() { return createdAt; }
+    public Instant getExpiresAt() { return expiresAt; }
+    public boolean isRevoked() { return revoked; }
+    public Instant getLastUsedAt() { return lastUsedAt; }
 }

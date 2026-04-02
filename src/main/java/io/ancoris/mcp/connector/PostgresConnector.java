@@ -27,16 +27,21 @@ public class PostgresConnector {
         this.jdbc = jdbc;
     }
 
-    public List<Map<String, Object>> query(String table, Map<String, String> filters, AccessRole role) {
+    /**
+     * SEC-009: maxRows bounds every query to prevent full-table exfiltration and
+     * context-window exhaustion on the consuming AI model.
+     */
+    public List<Map<String, Object>> query(String table, Map<String, String> filters,
+                                           AccessRole role, int maxRows) {
         if (!ALLOWED_TABLES.contains(table)) {
-            throw new SecurityException("Table not permitted: " + table);
+            throw new SecurityException("Access denied");  // SEC-012
         }
 
         List<String> allowedCols = buildColumnList(table, role);
         String cols = String.join(", ", allowedCols);
 
         if (filters == null || filters.isEmpty()) {
-            return jdbc.queryForList("SELECT " + cols + " FROM " + table);
+            return jdbc.queryForList("SELECT " + cols + " FROM " + table + " LIMIT ?", maxRows);
         }
 
         // Build parameterized WHERE clause — column names validated against allowlist
@@ -45,14 +50,16 @@ public class PostgresConnector {
         for (Map.Entry<String, String> entry : filters.entrySet()) {
             String col = entry.getKey();
             if (!allowedCols.contains(col)) {
-                throw new SecurityException("Column not permitted: " + col);
+                throw new SecurityException("Access denied");  // SEC-012
             }
             conditions.add(col + " = ?");
             args.add(entry.getValue());
         }
+        args.add(maxRows);
 
         String sql = "SELECT " + cols + " FROM " + table
-                + " WHERE " + String.join(" AND ", conditions);
+                + " WHERE " + String.join(" AND ", conditions)
+                + " LIMIT ?";
         return jdbc.queryForList(sql, args.toArray());
     }
 

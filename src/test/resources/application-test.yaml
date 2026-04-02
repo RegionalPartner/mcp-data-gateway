@@ -1,6 +1,11 @@
 spring:
   jpa:
     show-sql: false
+
+mcp:
+  security:
+    enforce-tls: false  # Testcontainers uses plain HTTP — TLS validation disabled
+
 logging:
   level:
     io.ancoris.mcp: DEBUG
