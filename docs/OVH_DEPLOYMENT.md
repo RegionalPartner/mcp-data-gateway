@@ -496,6 +496,40 @@ Look for `Status: True` on the `Ready` condition.
 
 ---
 
+## Part 7.5 — Audit log hardening (SEC-AUDIT2)
+
+The gateway writes a second copy of every audit event to a structured JSON file
+(`/var/log/mcp/audit.json`) that lives **outside PostgreSQL**. A database superuser
+can `ALTER TABLE audit_logs DISABLE TRIGGER ALL` to bypass the DB trigger; they
+cannot remove entries from an OS-level append-only file.
+
+After the first pod starts, run the following **once per node** (or in the pod via
+`kubectl exec`) to set the append-only filesystem attribute:
+
+```bash
+# Inside the mcp-gateway pod (or on the node if using a hostPath volume)
+mkdir -p /var/log/mcp
+chown mcp-gateway:mcp-gateway /var/log/mcp
+chattr +a /var/log/mcp/audit.json   # append-only: no overwrite, no delete
+lsattr /var/log/mcp/audit.json      # verify: output must contain 'a' flag
+```
+
+After hardening, verify that a write attempt is blocked:
+```bash
+echo "" > /var/log/mcp/audit.json   # must fail: Operation not permitted
+```
+
+Query audit events with `jq`:
+```bash
+jq '.mdc | {tool: .tool_name, summary: .result_summary}' /var/log/mcp/audit.json
+```
+
+> **Note:** `chattr +a` requires a supported filesystem (ext4, xfs). On WORM
+> block storage or network filesystems it may not be available — in that case
+> ship events to a separate syslog receiver over TLS for equivalent guarantees.
+
+---
+
 ## Part 8 — Testing the deployment
 
 ### Quick smoke test (no session required)
