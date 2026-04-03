@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/mcpgateway
-    username: mcpuser
-    password: mcppass
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/mcpgateway}
+    username: ${DB_USER:mcpuser}
+    password: ${DB_PASSWORD:mcppass}
   jpa:
     show-sql: true
 

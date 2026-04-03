@@ -7,7 +7,7 @@ spring:
         enabled: true
         name: mcp-data-gateway
         version: 1.0.0
-        transport: streamable-http
+        protocol: STREAMABLE
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}

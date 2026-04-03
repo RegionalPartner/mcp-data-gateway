@@ -33,7 +33,7 @@ public class DatabaseQueryTool {
                 .register(meterRegistry);
     }
 
-    @Tool(description = "Query structured data from internal tables with role-based column filtering. "
+    @Tool(name = "query_database", description = "Query structured data from internal tables with role-based column filtering. "
             + "Available tables: employees, document_chunks. "
             + "Default limit is 100 rows; maximum is 500.")
     public List<Map<String, Object>> queryDatabase(
