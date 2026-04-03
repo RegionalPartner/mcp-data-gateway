@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.sql.Timestamp;
@@ -20,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Integration test for API key lifecycle: expiry and revocation (SEC-001).
  *
- * Test keys are inserted with BCrypt strength 4 (fast) and cleaned up in @AfterEach.
+ * Test keys are inserted with HMAC-SHA256 hashes and cleaned up in @AfterEach.
  * The ApiKeyService cache is invalidated before each test to ensure fresh key loading.
  */
 @AutoConfigureMockMvc
@@ -35,8 +34,8 @@ class ApiKeyLifecycleIT extends AbstractIntegrationTest {
     @Autowired
     private ApiKeyService apiKeyService;
 
-    // Low-strength encoder — test keys only, speed matters here
-    private static final BCryptPasswordEncoder TEST_ENCODER = new BCryptPasswordEncoder(4);
+    @Autowired
+    private HmacApiKeyHasher hasher;
 
     private static final String EXPIRED_KEY_RAW = "test-lifecycle-expired-key";
     private static final String REVOKED_KEY_RAW = "test-lifecycle-revoked-key";
@@ -50,17 +49,17 @@ class ApiKeyLifecycleIT extends AbstractIntegrationTest {
     void insertTestKeys() {
         jdbc.update(
                 "INSERT INTO api_keys (key_hash, label, role, expires_at, revoked) VALUES (?, ?, ?, ?, ?)",
-                TEST_ENCODER.encode(EXPIRED_KEY_RAW), "lifecycle-test-expired", "READ_ONLY",
+                hasher.hash(EXPIRED_KEY_RAW), "lifecycle-test-expired", "READ_ONLY",
                 Timestamp.from(Instant.now().minusSeconds(3600)), false);
 
         jdbc.update(
                 "INSERT INTO api_keys (key_hash, label, role, expires_at, revoked) VALUES (?, ?, ?, ?, ?)",
-                TEST_ENCODER.encode(REVOKED_KEY_RAW), "lifecycle-test-revoked", "READ_ONLY",
+                hasher.hash(REVOKED_KEY_RAW), "lifecycle-test-revoked", "READ_ONLY",
                 null, true);
 
         jdbc.update(
                 "INSERT INTO api_keys (key_hash, label, role, expires_at, revoked) VALUES (?, ?, ?, ?, ?)",
-                TEST_ENCODER.encode(FUTURE_KEY_RAW), "lifecycle-test-future", "READ_ONLY",
+                hasher.hash(FUTURE_KEY_RAW), "lifecycle-test-future", "READ_ONLY",
                 Timestamp.from(Instant.now().plusSeconds(3600)), false);
 
         // Force cache reload so the newly inserted keys are visible to ApiKeyService

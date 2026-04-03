@@ -2,25 +2,29 @@ package io.ancoris.mcp.integration;
 
 import io.ancoris.mcp.model.ApiKey;
 import io.ancoris.mcp.security.ApiKeyRepository;
+import io.ancoris.mcp.security.HmacApiKeyHasher;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
 import java.util.List;
 
 @Component
 public class TestSecurityHelper {
 
-    private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(12);
+    private final HmacApiKeyHasher hasher;
+
+    public TestSecurityHelper(HmacApiKeyHasher hasher) {
+        this.hasher = hasher;
+    }
 
     /**
-     * Finds the ApiKey whose BCrypt hash matches rawKey and sets it as the
+     * Finds the ApiKey whose HMAC-SHA256 hash matches rawKey and sets it as the
      * current authentication on the SecurityContextHolder.
      */
     public void authenticateAs(String rawKey, ApiKeyRepository apiKeyRepository) {
         ApiKey matched = apiKeyRepository.findAll().stream()
-                .filter(key -> encoder.matches(rawKey, key.getKeyHash()))
+                .filter(key -> hasher.matches(rawKey, key.getKeyHash()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
                         "No API key found matching raw key: " + rawKey));
