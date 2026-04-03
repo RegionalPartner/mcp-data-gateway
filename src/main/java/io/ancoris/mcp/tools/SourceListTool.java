@@ -21,7 +21,7 @@ public class SourceListTool {
         this.auditService = auditService;
     }
 
-    @Tool(description = "List data sources and tables accessible with the current API key, including visible columns and document classifications.")
+    @Tool(name = "list_sources", description = "List data sources and tables accessible with the current API key, including visible columns and document classifications.")
     public Map<String, Object> listSources() {
         ApiKey apiKey = currentApiKey();
         AccessRole role = apiKey.getRole();
