@@ -20,6 +20,8 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db
+    placeholders:
+      hmacPepper: ${MCP_HMAC_PEPPER:dev-only-pepper-NOT-for-production-1234}
 
 minio:
   endpoint: ${MINIO_ENDPOINT}
@@ -41,11 +43,6 @@ server:
   error:
     include-message: never      # SEC-012: never expose exception messages to clients
     include-stacktrace: never
-
-spring:
-  flyway:
-    placeholders:
-      hmacPepper: ${MCP_HMAC_PEPPER:dev-only-pepper-NOT-for-production-1234}
 
 mcp:
   security:

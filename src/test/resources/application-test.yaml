@@ -1,6 +1,9 @@
 spring:
   jpa:
     show-sql: false
+  flyway:
+    placeholders:
+      hmacPepper: test-pepper-32-chars-minimum-000
 
 mcp:
   security:
