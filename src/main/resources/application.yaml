@@ -42,9 +42,16 @@ server:
     include-message: never      # SEC-012: never expose exception messages to clients
     include-stacktrace: never
 
+spring:
+  flyway:
+    placeholders:
+      hmacPepper: ${MCP_HMAC_PEPPER:dev-only-pepper-NOT-for-production-1234}
+
 mcp:
   security:
     enforce-tls: true   # SEC-010: set false only in dev/test profiles
+  hmac:
+    pepper: ${MCP_HMAC_PEPPER}
 
 logging:
   level:
