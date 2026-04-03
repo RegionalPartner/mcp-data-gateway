@@ -10,6 +10,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -106,6 +109,28 @@ class AuditLogIT extends AbstractIntegrationTest {
                 jdbc.update("UPDATE audit_logs SET result_summary = 'tampered' WHERE id = ?",
                         saved.getId()))
                 .isInstanceOf(DataAccessException.class);
+    }
+
+    // -----------------------------------------------------------------------
+    // SEC-AUDIT2: the file-based audit sink must receive events
+    // -----------------------------------------------------------------------
+
+    @Test
+    void auditFileSink_receivesEventForToolCall() throws IOException {
+        String uniqueSummary = "file-sink-test-" + UUID.randomUUID();
+
+        auditService.log("list_sources", null, Map.of(), uniqueSummary);
+
+        // The file appender writes to ${java.io.tmpdir}/mcp-audit-test.json (test profile)
+        Path auditFile = Path.of(System.getProperty("java.io.tmpdir"), "mcp-audit-test.json");
+
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> {
+            assertThat(auditFile).exists();
+            String content = Files.readString(auditFile);
+            // Each JSON line contains a "mdc" object with our fields
+            assertThat(content).contains(uniqueSummary);
+            assertThat(content).contains("\"tool_name\":\"list_sources\"");
+        });
     }
 
     // -----------------------------------------------------------------------
