@@ -62,6 +62,9 @@ dependencies {
     // MinIO S3-compatible storage
     implementation("io.minio:minio:8.5.9")
 
+    // AOP — used by RlsContextAspect to inject SET LOCAL per @Tool call (SEC-RLS)
+    implementation("org.springframework.boot:spring-boot-starter-aop")
+
     // In-memory cache for API key list (SEC-003)
     implementation("com.github.ben-manes.caffeine:caffeine")
 
