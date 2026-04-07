@@ -6,17 +6,13 @@ spring:
   jpa:
     show-sql: true
 
-minio:
-  endpoint: http://localhost:9000
-  access-key: minioadmin
-  secret-key: minioadmin
-  bucket: mcp-documents
-
 mcp:
   security:
     enforce-tls: false  # dev uses plain HTTP — TLS validation disabled
   hmac:
     pepper: ${MCP_HMAC_PEPPER:dev-only-pepper-NOT-for-production-1234}
+  content:
+    key: ${MCP_CONTENT_KEY:0000000000000000000000000000000000000000000000000000000000000000}
 
 logging:
   level:

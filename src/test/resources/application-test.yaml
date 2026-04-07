@@ -10,6 +10,8 @@ mcp:
     enforce-tls: false  # Testcontainers uses plain HTTP — TLS validation disabled
   hmac:
     pepper: test-pepper-32-chars-minimum-000
+  content:
+    key: "0101010101010101010101010101010101010101010101010101010101010101"
 
 logging:
   level:
