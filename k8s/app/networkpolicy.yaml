@@ -55,28 +55,7 @@ spec:
         - protocol: TCP
           port: 5432
 ---
-# Allow mcp-gateway to reach MinIO on port 9000
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-gateway-to-minio
-  namespace: mcp-demo
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: minio
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: mcp-gateway
-      ports:
-        - protocol: TCP
-          port: 9000
----
-# Allow mcp-gateway egress to postgres, minio, and DNS
+# Allow mcp-gateway egress to postgres and DNS
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -96,13 +75,6 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: minio
-      ports:
-        - protocol: TCP
-          port: 9000
     - ports:
         - protocol: UDP
           port: 53
