@@ -817,7 +817,7 @@ See `DEVELOPER_GUIDE.md` section on E2E tests for a deeper walkthrough of this f
 ./gradlew jacocoTestCoverageVerification  ← fails if coverage < 70%
 ./gradlew spotbugsMain       ← static analysis (security bugs, null pointers, etc.)
 ./gradlew dependencyCheckAnalyze  ← CVE scan (needs NVD_API_KEY env var)
-./gradlew verifyHashes       ← confirm that demo key values match their BCrypt hashes
+./gradlew computeDemoHashes  ← print HMAC-SHA256 hashes for demo keys (requires MCP_HMAC_PEPPER)
 ```
 
 ### JaCoCo — code coverage
@@ -845,15 +845,15 @@ Requires the `NVD_API_KEY` environment variable (free registration at nvd.nist.g
 
 Results at: `build/reports/dependency-check-report.html`
 
-### `verifyHashes` task
+### `computeDemoHashes` task
 
-The demo BCrypt hashes in `V2__seed.sql` were generated from real key values. The `verifyHashes` Gradle task lets you confirm they still match:
+The demo HMAC-SHA256 hashes in `V2__seed.sql` were generated from real key values using the configured pepper. The `computeDemoHashes` Gradle task lets you verify or regenerate them:
 
 ```bash
-DEMO_READONLY_KEY=demo-readonly-key-001 DEMO_ADMIN_KEY=demo-admin-key-001 ./gradlew verifyHashes
+MCP_HMAC_PEPPER=<your-pepper> ./gradlew computeDemoHashes
 ```
 
-Key values are read from environment variables — never from source code.
+Key values and the pepper are read from environment variables — never from source code.
 
 ---
 
