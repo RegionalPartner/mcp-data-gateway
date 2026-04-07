@@ -23,10 +23,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - mcp.ancoris-demo.io
+        - mcp.your-domain.com
       secretName: mcp-gateway-tls
   rules:
-    - host: mcp.ancoris-demo.io
+    - host: mcp.your-domain.com
       http:
         paths:
           - path: /

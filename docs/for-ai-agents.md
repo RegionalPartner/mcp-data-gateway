@@ -19,7 +19,7 @@ Your key determines your **role**, which controls what data you can see.
 | `READ_ONLY` | Employee records (no salary), public/internal documents |
 | `ADMIN` | All employee fields (including salary), all document classifications |
 
-Demo keys (pre-seeded):
+Demo keys (pre-seeded, **local development only — rotate before any production deployment**):
 - `demo-readonly-key-001` → READ_ONLY
 - `demo-admin-key-001` → ADMIN
 
