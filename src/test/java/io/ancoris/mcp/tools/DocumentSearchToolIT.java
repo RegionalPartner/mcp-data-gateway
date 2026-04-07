@@ -14,6 +14,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -42,6 +44,9 @@ class DocumentSearchToolIT extends AbstractIntegrationTest {
 
     @Autowired
     MinioClient minioClient;
+
+    @Autowired
+    JdbcTemplate jdbc;
 
     @BeforeAll
     void setUpMinioObjects() throws Exception {
@@ -148,6 +153,43 @@ class DocumentSearchToolIT extends AbstractIntegrationTest {
         List<DataFragment> results = documentSearchTool.searchDocuments("Normandie", 999);
 
         assertThat(results).hasSizeLessThanOrEqualTo(10);
+    }
+
+    // -----------------------------------------------------------------------
+    // SEC-RLS: verify that the RLS policies were created by V5 migration.
+    //
+    // Note: row-filtering enforcement (CONFIDENTIAL blocked for READ_ONLY)
+    // requires a non-superuser DB role. The Testcontainers user is a superuser
+    // and therefore bypasses FORCE ROW LEVEL SECURITY — this is expected.
+    // In production, verify: SELECT rolsuper FROM pg_roles WHERE rolname='mcpuser';
+    // must return false, and the policy then enforces the filter at DB level.
+    // -----------------------------------------------------------------------
+
+    @Test
+    @Transactional
+    void rls_v5Migration_createdClassificationPolicy() {
+        Integer policyCount = jdbc.queryForObject(
+                """
+                SELECT count(*) FROM pg_policies
+                WHERE tablename = 'document_chunks'
+                  AND policyname = 'doc_chunks_classification_policy'
+                """,
+                Integer.class);
+
+        assertThat(policyCount).isEqualTo(1);
+    }
+
+    @Test
+    @Transactional
+    void rls_v5Migration_rlsEnabledOnDocumentChunks() {
+        Boolean rlsEnabled = jdbc.queryForObject(
+                """
+                SELECT relrowsecurity FROM pg_class
+                WHERE relname = 'document_chunks'
+                """,
+                Boolean.class);
+
+        assertThat(rlsEnabled).isTrue();
     }
 
     // -----------------------------------------------------------------------
