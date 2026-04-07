@@ -229,7 +229,7 @@ terraform plan
 
 You should see two resources to be created:
 - `ovh_cloud_project_kube.mcp_cluster` — a Managed Kubernetes 1.30 cluster
-- `ovh_cloud_project_kube_nodepool.default` — a 2-node pool of `b3-8` (4 vCPU, 8GB RAM)
+- `ovh_cloud_project_kube_nodepool.default` — a 2-node pool of `b3-8` (2 vCPU, 8GB RAM)
 
 > **Cost estimate**: `b3-8` costs approximately €0.08/hour per node (~€58/month for 2 nodes).
 > Delete the cluster when not in use: `terraform destroy`.
