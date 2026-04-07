@@ -34,15 +34,11 @@ public class SourceListTool {
                 ),
                 Map.of(
                         "name", "document_chunks",
-                        "type", "structured",
-                        "columns", postgresConnector.getVisibleColumns("document_chunks", role)
-                ),
-                Map.of(
-                        "name", "documents (MinIO)",
-                        "type", "object-storage",
+                        "type", "encrypted-documents",
                         "accessible_classifications", role.canAccessConfidential()
                                 ? List.of("PUBLIC", "INTERNAL", "CONFIDENTIAL")
-                                : List.of("PUBLIC", "INTERNAL")
+                                : List.of("PUBLIC", "INTERNAL"),
+                        "columns", postgresConnector.getVisibleColumns("document_chunks", role)
                 )
         );
 

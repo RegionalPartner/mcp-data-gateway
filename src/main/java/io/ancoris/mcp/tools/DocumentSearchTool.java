@@ -1,7 +1,7 @@
 package io.ancoris.mcp.tools;
 
 import io.ancoris.mcp.audit.AuditService;
-import io.ancoris.mcp.connector.MinioConnector;
+import io.ancoris.mcp.connector.ContentStore;
 import io.ancoris.mcp.model.AccessRole;
 import io.ancoris.mcp.model.ApiKey;
 import io.ancoris.mcp.model.DataFragment;
@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Component
 public class DocumentSearchTool {
@@ -20,12 +21,12 @@ public class DocumentSearchTool {
     private static final int MAX_QUERY_LENGTH = 500;
 
     private final JdbcTemplate jdbc;
-    private final MinioConnector minioConnector;
+    private final ContentStore contentStore;
     private final AuditService auditService;
 
-    public DocumentSearchTool(JdbcTemplate jdbc, MinioConnector minioConnector, AuditService auditService) {
+    public DocumentSearchTool(JdbcTemplate jdbc, ContentStore contentStore, AuditService auditService) {
         this.jdbc = jdbc;
-        this.minioConnector = minioConnector;
+        this.contentStore = contentStore;
         this.auditService = auditService;
     }
 
@@ -53,7 +54,7 @@ public class DocumentSearchTool {
 
         String inClause = String.join(", ", allowedClassifications);
         String sql = """
-                SELECT id, doc_name, classification, minio_key, chunk_index
+                SELECT id, doc_name, classification, chunk_index
                 FROM document_chunks
                 WHERE classification IN (%s)
                   AND to_tsvector('french', coalesce(text_preview, '')) @@ plainto_tsquery('french', ?)
@@ -63,12 +64,12 @@ public class DocumentSearchTool {
         List<Map<String, Object>> rows = jdbc.queryForList(sql, query, limit);
         List<DataFragment> fragments = new ArrayList<>();
         for (Map<String, Object> row : rows) {
-            String minioKey = (String) row.get("minio_key");
-            String rawText = minioConnector.fetchChunk(minioKey);
+            UUID chunkId = (UUID) row.get("id");
+            String rawText = contentStore.fetchChunk(chunkId);
             // SEC-017: wrap with trust boundary markers to mitigate prompt injection
             String framedText = "[EXTERNAL_CONTENT_START]\n" + rawText + "\n[EXTERNAL_CONTENT_END]";
             fragments.add(new DataFragment(
-                    row.get("id").toString(),
+                    chunkId.toString(),
                     (String) row.get("doc_name"),
                     (String) row.get("classification"),
                     framedText,
