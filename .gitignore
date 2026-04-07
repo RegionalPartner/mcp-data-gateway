@@ -29,3 +29,9 @@ terraform.tfvars
 # OS
 .DS_Store
 Thumbs.db
+
+# Personal notes
+NOOB_GUIDE.md
+
+# Stray extracted Spring artifacts (not project source)
+org/

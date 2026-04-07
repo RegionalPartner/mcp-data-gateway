@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Delegate default Spring Boot console and rolling-file configuration -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!-- ── AUDIT_FILE appender: one NDJSON line per audit event ── -->
+    <!-- SEC-AUDIT2: second immutable sink outside PostgreSQL's transaction machinery.
+         The DB trigger (audit_logs_immutable) blocks app-level UPDATE/DELETE but a
+         superuser can DISABLE TRIGGER ALL. This file sits outside PG entirely.
+         Post-deployment: sudo chattr +a /var/log/mcp/audit.json (see deploy guide). -->
+    <springProfile name="!test">
+        <appender name="AUDIT_FILE" class="ch.qos.logback.core.FileAppender">
+            <file>/var/log/mcp/audit.json</file>
+            <append>true</append>
+            <encoder class="ch.qos.logback.classic.encoder.JsonEncoder"/>
+        </appender>
+    </springProfile>
+
+    <!-- In the test profile write to a temp file so tests can assert on its content -->
+    <springProfile name="test">
+        <appender name="AUDIT_FILE" class="ch.qos.logback.core.FileAppender">
+            <file>${java.io.tmpdir}/mcp-audit-test.json</file>
+            <append>true</append>
+            <encoder class="ch.qos.logback.classic.encoder.JsonEncoder"/>
+        </appender>
+    </springProfile>
+
+    <!-- AUDIT logger: routes exclusively to AUDIT_FILE, never bubbles to root -->
+    <logger name="AUDIT" level="INFO" additivity="false">
+        <appender-ref ref="AUDIT_FILE"/>
+    </logger>
+
+    <!-- Root logger: console only (Spring Boot default) -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>

@@ -3,7 +3,6 @@ package io.ancoris.mcp.security;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.ancoris.mcp.model.ApiKey;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
@@ -14,16 +13,16 @@ import java.util.concurrent.TimeUnit;
 public class ApiKeyService {
 
     private final ApiKeyRepository repository;
-    private final BCryptPasswordEncoder encoder;
+    private final HmacApiKeyHasher hasher;
     /**
-     * SEC-003: cache the full key list for 60 s to avoid O(n × BCrypt) DB hits per request.
+     * SEC-003: cache the full key list for 60 s to avoid O(n × HMAC) DB hits per request.
      * A single-entry cache keyed on "all" is sufficient; invalidated on key changes.
      */
     private final Cache<String, List<ApiKey>> keyCache;
 
-    public ApiKeyService(ApiKeyRepository repository, BCryptPasswordEncoder encoder) {
+    public ApiKeyService(ApiKeyRepository repository, HmacApiKeyHasher hasher) {
         this.repository = repository;
-        this.encoder = encoder;
+        this.hasher = hasher;
         this.keyCache = Caffeine.newBuilder()
                 .expireAfterWrite(60, TimeUnit.SECONDS)
                 .maximumSize(1)
@@ -36,7 +35,7 @@ public class ApiKeyService {
                 // SEC-001: reject revoked or expired keys
                 .filter(key -> !key.isRevoked())
                 .filter(key -> key.getExpiresAt() == null || key.getExpiresAt().isAfter(Instant.now()))
-                .filter(key -> encoder.matches(rawKey, key.getKeyHash()))
+                .filter(key -> hasher.matches(rawKey, key.getKeyHash()))
                 .findFirst();
     }
 

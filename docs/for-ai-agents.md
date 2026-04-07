@@ -49,8 +49,9 @@ Discover what data is available and what you are allowed to see.
       "columns": ["id", "doc_name", "classification", "chunk_index", "text_preview", "created_at"]
     },
     {
-      "name": "documents (MinIO)",
-      "type": "object-storage",
+      "name": "document_chunks.encrypted_content",
+      "type": "encrypted-bytea",
+      "note": "AES-256-GCM encrypted at rest; decrypted in-process by the gateway",
       "accessible_classifications": ["PUBLIC", "INTERNAL"]
     }
   ]

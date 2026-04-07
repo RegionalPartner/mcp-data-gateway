@@ -1,10 +1,17 @@
 spring:
   jpa:
     show-sql: false
+  flyway:
+    placeholders:
+      hmacPepper: test-pepper-32-chars-minimum-000
 
 mcp:
   security:
     enforce-tls: false  # Testcontainers uses plain HTTP — TLS validation disabled
+  hmac:
+    pepper: test-pepper-32-chars-minimum-000
+  content:
+    key: "0101010101010101010101010101010101010101010101010101010101010101"
 
 logging:
   level:

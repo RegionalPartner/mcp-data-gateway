@@ -7,7 +7,7 @@ spring:
         enabled: true
         name: mcp-data-gateway
         version: 1.0.0
-        transport: streamable-http
+        protocol: STREAMABLE
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
@@ -20,12 +20,8 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db
-
-minio:
-  endpoint: ${MINIO_ENDPOINT}
-  access-key: ${MINIO_ACCESS_KEY}
-  secret-key: ${MINIO_SECRET_KEY}
-  bucket: ${MINIO_BUCKET:mcp-documents}
+    placeholders:
+      hmacPepper: ${MCP_HMAC_PEPPER:dev-only-pepper-NOT-for-production-1234}
 
 management:
   endpoints:
@@ -45,6 +41,10 @@ server:
 mcp:
   security:
     enforce-tls: true   # SEC-010: set false only in dev/test profiles
+  hmac:
+    pepper: ${MCP_HMAC_PEPPER}
+  content:
+    key: ${MCP_CONTENT_KEY}
 
 logging:
   level:
