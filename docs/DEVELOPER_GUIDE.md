@@ -37,7 +37,7 @@ Employee's AI assistant
   MCP Data Gateway          ← this project
         │
         ├──► PostgreSQL      (employee records, document metadata)
-        └──► MinIO           (actual document text, stored as files)
+        └──► PostgreSQL      (encrypted document content, AES-256-GCM)
 ```
 
 The gateway exposes three **tools** that the AI can call:
@@ -125,9 +125,9 @@ Every API key has a `role`: either `READ_ONLY` or `ADMIN`. What you can see or d
 | **Spring Security** | The security framework. Processes filters, manages the security context per request. |
 | **Spring Data JPA + Hibernate** | Maps Java objects to database tables (the `@Entity` classes). Provides repository interfaces for querying. |
 | **PostgreSQL** | The relational database. Stores employees, document metadata, API keys, and audit logs. |
-| **Flyway** | Database migration tool. Applies SQL files in version order (`V1__`, `V2__`, `V3__`) on startup. You never change the database manually. |
-| **MinIO** | An S3-compatible object store (like Amazon S3 but self-hosted). Stores the actual document text as JSON files. |
-| **Caffeine** | An in-memory cache library. Used to cache the API key list so every request doesn't trigger a database + BCrypt round-trip. |
+| **Flyway** | Database migration tool. Applies SQL files in version order (`V1__`, `V2__`, …, `V6__`) on startup. You never change the database manually. |
+| **AES-256-GCM (javax.crypto)** | Content encryption. Document chunk text is encrypted at rest in PostgreSQL using a 256-bit key from `MCP_CONTENT_KEY`. Each chunk gets a fresh 12-byte random IV, prepended to the ciphertext. No external service required. |
+| **Caffeine** | An in-memory cache library. Used to cache the API key list so every request doesn't trigger a database + HMAC round-trip. |
 | **Micrometer** | Metrics library. Counts authentication failures, rate-limit hits, tool calls — exposes them on `/actuator/metrics`. |
 | **Testcontainers** | Starts real Docker containers (PostgreSQL, MinIO) during tests, then tears them down. No mocking of the database. |
 | **JaCoCo** | Measures test code coverage. Fails the build if coverage drops below 70%. |
@@ -165,12 +165,12 @@ Every API key has a `role`: either `READ_ONLY` or `ADMIN`. What you can see or d
 DatabaseQueryTool  DocumentSearchTool  SourceListTool
        │             │                    │
        ▼             ▼                    │
-PostgresConnector  MinioConnector  PostgresConnector
+PostgresConnector  DbContentStore  PostgresConnector
        │             │
        ▼             ▼
-  PostgreSQL       MinIO
-   (data, keys,  (document
-    audit logs)    files)
+  PostgreSQL       PostgreSQL
+   (data, keys,  (encrypted_content
+    audit logs)   BYTEA, AES-256-GCM)
               │
               ▼
          AuditService  ──► audit_logs table (append-only)
@@ -346,15 +346,16 @@ employees
 └────────────┴──────────────┴──────────────────────────────────┘
 
 document_chunks
-┌────────────────┬──────────────┬──────────────────────────────────────────┐
-│ id             │ UUID         │ primary key                              │
-│ doc_name       │ VARCHAR(255) │ filename of the original document        │
-│ classification │ VARCHAR(20)  │ 'PUBLIC', 'INTERNAL', or 'CONFIDENTIAL'  │
-│ minio_key      │ VARCHAR(500) │ path in MinIO (e.g. chunks/file-00.json) │
-│ chunk_index    │ INTEGER      │ which chunk of the document              │
-│ text_preview   │ VARCHAR(500) │ short excerpt for full-text search       │
-│ created_at     │ TIMESTAMPTZ  │                                          │
-└────────────────┴──────────────┴──────────────────────────────────────────┘
+┌───────────────────┬──────────────┬────────────────────────────────────────────────┐
+│ id                │ UUID         │ primary key                                    │
+│ doc_name          │ VARCHAR(255) │ filename of the original document              │
+│ classification    │ VARCHAR(20)  │ 'PUBLIC', 'INTERNAL', or 'CONFIDENTIAL'        │
+│ minio_key         │ VARCHAR(500) │ legacy column (nullable); superseded by V6     │
+│ chunk_index       │ INTEGER      │ which chunk of the document                    │
+│ text_preview      │ VARCHAR(500) │ short excerpt for full-text search (unencrypted)│
+│ encrypted_content │ BYTEA        │ AES-256-GCM: [12B IV][ciphertext+16B tag]      │
+│ created_at        │ TIMESTAMPTZ  │                                                │
+└───────────────────┴──────────────┴────────────────────────────────────────────────┘
 
 audit_logs
 ┌────────────────┬──────────────┬──────────────────────────────────┐
@@ -377,6 +378,23 @@ Inserts:
 - Two demo API keys (hashed with BCrypt strength-12)
 - Five employees across departments RH, IT, Finance
 - Five document chunks with classifications PUBLIC, INTERNAL, and CONFIDENTIAL
+
+### V4 — HMAC-SHA256 key authentication (`V4__hmac_api_keys.sql`)
+
+Migrates `api_keys.key_hash` from BCrypt VARCHAR(72) to HMAC-SHA256 VARCHAR(64).
+Updates the two demo key hashes using a server-side pepper from `MCP_HMAC_PEPPER`.
+
+### V5 — PostgreSQL Row-Level Security (`V5__rls_document_chunks.sql`)
+
+Enables RLS on `document_chunks` and `employees`. Creates a policy that blocks
+`CONFIDENTIAL` rows for non-ADMIN sessions at the database level, independently of
+any application-layer filter.
+
+### V6 — encrypted content column (`V6__encrypted_content_column.sql`)
+
+Adds `encrypted_content BYTEA` to `document_chunks`. Makes `minio_key` nullable
+(transition period). Adds a partial index `idx_chunk_needs_migration` for rows not
+yet migrated. V7 will drop `minio_key` once all rows have been re-encrypted.
 
 ### V3 — lifecycle + immutability (`V3__key_lifecycle.sql`)
 
@@ -485,19 +503,48 @@ SSE responses are completed on an internal async thread (Spring MVC's `DeferredR
 
 Enabled only when `mcp.security.enforce-tls=true` (production). On startup it checks:
 - The DB URL must contain `sslmode=require`
-- The MinIO endpoint must start with `https://`
 
-If either check fails, the application refuses to start with a clear error message. This prevents accidentally deploying to production without encryption.
+If the check fails, the application refuses to start with a clear error message. This prevents accidentally deploying to production without encryption.
 
-### 8.6 PasswordEncoderConfig (`config/PasswordEncoderConfig.java`)
+### 8.6 HmacApiKeyHasher (`security/HmacApiKeyHasher.java`)
+
+API keys are 20+ character random strings — their entropy is already high. BCrypt adds
+~250ms per request for no security benefit. HMAC-SHA256 with a server-side pepper
+achieves equivalent protection in microseconds (NIST FIPS 198-1).
 
 ```java
-return new BCryptPasswordEncoder(12);
+// pepper from MCP_HMAC_PEPPER (≥ 32 chars, out-of-band secret)
+public String hash(String rawKey)            // → 64 lowercase hex chars
+public boolean matches(String rawKey, String stored)  // constant-time comparison
 ```
 
-Strength 12 = 2^12 = 4096 hash iterations. Each BCrypt check takes roughly 200–400ms on a modern CPU. This is intentional: an attacker trying to brute-force a leaked hash would need 400ms per guess.
+The pepper is never stored in source — it comes from `MCP_HMAC_PEPPER` env var.
 
-In tests, strength 4 is used (2^4 = 16 iterations) to keep tests fast.
+### 8.7 RlsContextAspect (`security/RlsContextAspect.java`)
+
+PostgreSQL Row-Level Security policies enforce CONFIDENTIAL access at the database
+level, independently of the application-layer classification filter. The aspect injects
+`SET LOCAL app.mcp_role = '<role>'` at the start of each `@Tool` transaction so the
+policy can read the current role.
+
+```sql
+-- V5 policy: blocks CONFIDENTIAL rows unless app.mcp_role = 'ADMIN'
+CREATE POLICY doc_chunks_classification_policy ON document_chunks ...
+```
+
+**Important:** `FORCE ROW LEVEL SECURITY` is bypassed by PostgreSQL superusers. In
+production, verify `SELECT rolsuper FROM pg_roles WHERE rolname = 'mcpuser'` returns
+`false`.
+
+### 8.8 ContentEncryptor (`connector/ContentEncryptor.java`)
+
+Document chunk text is encrypted with AES-256-GCM before storage in PostgreSQL.
+Wire format: `[12B random IV][ciphertext + 16B GCM authentication tag]`.
+
+Key source: `MCP_CONTENT_KEY` env var — exactly 64 hex characters (32 bytes).
+A wrong or tampered key causes a `SecurityException` (GCM tag mismatch); the
+chunk is silently returned as empty rather than surfacing a decryption error to
+the LLM.
 
 ---
 
@@ -545,7 +592,7 @@ Parameters:
    - `READ_ONLY` → `IN ('PUBLIC', 'INTERNAL')`
    - `ADMIN` → `IN ('PUBLIC', 'INTERNAL', 'CONFIDENTIAL')`
 3. Runs a PostgreSQL full-text search query using `plainto_tsquery('french', ?)` against the pre-indexed `text_preview` column. The `?` parameter is passed safely (no string interpolation).
-4. For each matching row, fetches the full text chunk from MinIO via `MinioConnector.fetchChunk(...)`.
+4. For each matching row, fetches the decrypted chunk text from PostgreSQL via `DbContentStore.fetchChunk(UUID)` (AES-256-GCM decryption).
 5. Wraps each chunk with trust boundary markers:
    ```
    [EXTERNAL_CONTENT_START]
@@ -613,15 +660,13 @@ spring:
     username: ${DB_USER}
     password: ${DB_PASSWORD}
 
-minio:
-  endpoint: ${MINIO_ENDPOINT}
-  access-key: ${MINIO_ACCESS_KEY}
-  secret-key: ${MINIO_SECRET_KEY}
-  bucket: ${MINIO_BUCKET:mcp-documents}
-
 mcp:
   security:
-    enforce-tls: true             # ← forces https:// and sslmode=require on startup
+    enforce-tls: true             # ← forces sslmode=require on startup (SEC-010)
+  hmac:
+    pepper: ${MCP_HMAC_PEPPER}   # ← ≥ 32 chars, required for HMAC-SHA256 key auth
+  content:
+    key: ${MCP_CONTENT_KEY}      # ← exactly 64 hex chars (32 bytes), for AES-256-GCM
 ```
 
 All secrets use `${VAR}` syntax — Spring reads them from environment variables. No secret ever appears in source code.
@@ -661,11 +706,13 @@ docker compose up --build
 
 This starts:
 1. `postgres` — PostgreSQL on `127.0.0.1:5432`
-2. `minio` — MinIO object store on `127.0.0.1:9000`, console on `127.0.0.1:9001`
-3. `minio-init` — a one-shot container that creates the `mcp-documents` bucket
-4. `mcp-gateway` — the Spring Boot app on `127.0.0.1:8080`
+2. `mcp-gateway` — the Spring Boot app on `127.0.0.1:8080`
 
 All ports are bound to `127.0.0.1` (localhost only) — they are not reachable from other machines on your network.
+
+The gateway uses two environment variables with dev-safe fallbacks in `application-dev.yaml`:
+- `MCP_HMAC_PEPPER` — pepper for HMAC-SHA256 key hashing (≥ 32 chars). Default is a dev-only value — **never use the default in production**.
+- `MCP_CONTENT_KEY` — 64 hex chars (32 bytes) for AES-256-GCM content encryption. Default is 64 zeros — **never use the default in production**.
 
 ### Testing with curl
 
@@ -702,10 +749,6 @@ curl -s -X POST http://localhost:8080/mcp \
 
 The response body is SSE format — look for the `data:` line which contains the JSON result.
 
-### MinIO console
-
-Open `http://localhost:9001` in a browser. Login: `minioadmin` / `minioadmin`. You can browse the `mcp-documents` bucket to see the uploaded document chunks.
-
 ---
 
 ## 12. Tests
@@ -725,17 +768,18 @@ These use Mockito to replace real collaborators with fakes.
 | Test file | What it tests |
 |---|---|
 | `AuditServiceTest` | Verifies that `AuditService.log()` saves the right fields and increments the `mcp.tool.calls` Micrometer counter. |
-| `ApiKeyServiceTest` | Verifies BCrypt matching, cache behavior (second call doesn't hit the DB), expiry rejection, revocation rejection. |
+| `ApiKeyServiceTest` | Verifies HMAC matching, cache behavior (second call doesn't hit the DB), expiry rejection, revocation rejection. |
+| `HmacApiKeyHasherTest` | Verifies round-trip, constant-time comparison, wrong-key rejection, and short-pepper rejection at construction. |
 | `RateLimiterFilterTest` | Verifies 60 requests are allowed, the 61st is blocked, and the response is 429. Also checks the `/actuator/health` exemption. |
-| `MinioConnectorTest` | Verifies that `fetchChunk()` calls MinIO with the right arguments, that it returns the `"text"` field, and that suspicious paths (with `..` or wrong prefix) are rejected. |
+| `ContentEncryptorTest` | Verifies round-trip, random IV (two encryptions differ), tampered bytes → SecurityException, wrong key → SecurityException, short key → IllegalStateException. |
+| `DbContentStoreTest` | Verifies decryption via mocked JdbcTemplate, null column → empty, long text truncated to 500 chars, tampered/error → empty. |
 | `PostgresConnectorTest` | Verifies the column allowlist, role-based column removal, filter validation, and that an unknown table throws `SecurityException`. |
 
-### Integration tests (Testcontainers: real PostgreSQL + MinIO)
+### Integration tests (Testcontainers: real PostgreSQL)
 
 These extend `AbstractIntegrationTest`, which:
 1. Uses `@Testcontainers` to start a real PostgreSQL container
-2. Uses `@Testcontainers` to start a real MinIO container
-3. Uses `@DynamicPropertySource` to tell Spring the container's URL
+2. Uses `@DynamicPropertySource` to tell Spring the container's URL
 
 Flyway runs the migrations (`V1`, `V2`, `V3`) against the test PostgreSQL container automatically on startup.
 
@@ -854,15 +898,25 @@ Now docker-compose's `DB_URL` env var overrides the default when running in cont
 
 **Fix**: Either add `?sslmode=require` to your `DB_URL`, or set `mcp.security.enforce-tls=false` in your local config (already done in `application-dev.yaml`).
 
-### "BCrypt takes 30 seconds per request in tests"
+### "Application fails to start: MCP_CONTENT_KEY must be exactly 64 hex characters"
 
-**Cause**: The production BCrypt encoder uses strength 12. Tests that insert keys with strength 12 will be very slow.
+**Cause**: `ContentEncryptor` validates `MCP_CONTENT_KEY` at construction. The value is either missing, too short, or contains non-hex characters.
 
-**Fix**: Integration tests insert test keys with strength 4:
-```java
-new BCryptPasswordEncoder(4).encode(rawKey)
+**Fix**: Generate a valid key with `openssl rand -hex 32` (produces exactly 64 hex characters). Set it as `MCP_CONTENT_KEY` in your environment. In dev, the `application-dev.yaml` fallback (64 zeros) is used if the env var is not set — but **never use the all-zeros key in production**.
+
+**YAML gotcha**: if you hardcode a hex value in a YAML file, quote it:
+```yaml
+mcp:
+  content:
+    key: "0101010101010101010101010101010101010101010101010101010101010101"
 ```
-This is acceptable in tests — you are testing the authentication *logic*, not the hashing strength.
+Without quotes, SnakeYAML (YAML 1.1) interprets sequences of `0`s and `1`s as octal integers.
+
+### "Application fails to start: MCP_HMAC_PEPPER must be ≥ 32 chars"
+
+**Cause**: `HmacApiKeyHasher` validates the pepper at construction. A short pepper weakens the HMAC to a predictable value.
+
+**Fix**: Set `MCP_HMAC_PEPPER` to a random string of at least 32 characters (`openssl rand -hex 32` works). In dev, the `application-dev.yaml` fallback is used automatically.
 
 ### "Test fails: audit log row not found immediately after tool call"
 

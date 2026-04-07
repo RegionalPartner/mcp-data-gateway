@@ -30,8 +30,10 @@
 - **Least-privilege data exposure**: an LLM calling a tool should receive the minimum data
   consistent with the caller's role. No post-processing filter, no client-side enforcement —
   the allowlist is enforced at query build time.
-- **Append-only audit trail**: every tool invocation is recorded immutably. Tampering requires
-  dropping the trigger, which requires superuser privilege not held by the application user.
+- **Append-only audit trail**: every tool invocation is recorded in two independent sinks —
+  the PostgreSQL `audit_logs` table (trigger-enforced append-only) and a structured JSON file
+  (`/var/log/mcp/audit.json`) outside PostgreSQL's reach. Both must be compromised simultaneously
+  to erase an audit trail entry.
 - **Defense in depth**: no single layer is trusted to be the only gate. Rate limiting,
   authentication, authorization, input validation, and output sanitization are all independent.
 - **Fail closed**: startup aborts if TLS is not configured in production
@@ -43,8 +45,9 @@
 ### Non-goals
 
 - **Multi-tenant isolation**: all API keys share the same database schema. Row-level security
-  is enforced in application code, not PostgreSQL RLS policies. Good enough for a controlled
-  internal deployment; insufficient for a public SaaS.
+  is enforced at two layers — application code (classification filter) and PostgreSQL RLS
+  policies (V5 migration). Good enough for a controlled internal deployment; insufficient for
+  a public SaaS where schema-level tenant isolation would be required.
 - **Horizontal scaling of rate limiting**: `RateLimiterFilter` uses a JVM-local Caffeine cache.
   A load-balanced deployment would require a distributed counter (Redis `INCR` + TTL).
 - **Real-time key revocation**: `ApiKeyService` caches the key list for 60 seconds. A revoked
@@ -62,22 +65,21 @@
 | Threat | Control |
 |---|---|
 | Unauthenticated access | `ApiKeyFilter` — 401 before any business logic |
-| Brute-force key enumeration | BCrypt strength-12 + 60 req/min rate limit |
+| Brute-force key enumeration | HMAC-SHA256 (server-side pepper) + 60 req/min rate limit |
 | Horizontal privilege escalation (READ_ONLY sees ADMIN data) | Column + classification allowlist enforced at SQL build time |
 | SQL injection via table name | `ALLOWED_TABLES` Set whitelist in `PostgresConnector` |
 | SQL injection via filter values | Parameterized query (`?` placeholders, `jdbc.queryForList(sql, args)`) |
 | SQL injection via filter column names | Column name validated against role-visible allowlist before inclusion |
-| Path traversal in MinIO key | `minioKey.startsWith("chunks/")` and `!minioKey.contains("..")` |
+| Content data exfiltration via DB dump | AES-256-GCM encryption at rest; key separate from DB credentials |
 | Prompt injection via document content | `[EXTERNAL_CONTENT_START/END]` trust boundary framing |
 | Prompt injection via oversized query | `query.length() > 500` check before processing |
 | Stack trace leakage in error responses | Spring's default error handler + no stack trace in MCP error result |
 | Sensitive data in logs | Parameters logged as structured fields; salary values never appear in params |
-| Audit trail tampering | PostgreSQL trigger prevents UPDATE/DELETE on `audit_logs` |
-| Cleartext credentials in transit | `StartupValidationConfig` enforces `sslmode=require` + `https://` at startup |
+| Audit trail tampering | DB trigger (append-only) + `chattr +a` JSON file outside PostgreSQL |
+| Cleartext credentials in transit | `StartupValidationConfig` enforces `sslmode=require` at startup |
 | CVEs in dependencies | OWASP Dependency Check, fails on CVSS ≥ 7.0 |
 | Exposed management endpoints | `/actuator/**` requires `ROLE_ADMIN`; only `/actuator/health` is public |
 | Container ports exposed on LAN | `127.0.0.1:PORT:PORT` binding in docker-compose |
-| Pinned container images | MinIO image uses a full release tag, not `latest` |
 
 ### Authentication flow in detail
 
@@ -92,22 +94,21 @@ ApiKeyService.authenticate(rawKey)
       ├─ 2. For each key in list:
       │       filter: !revoked
       │       filter: expiresAt == null || expiresAt.isAfter(now)
-      │       filter: BCryptPasswordEncoder.matches(rawKey, key.keyHash)
-      │                      ← ~200ms per key at strength-12
+      │       filter: HmacApiKeyHasher.matches(rawKey, key.keyHash)
+      │                      ← microseconds; constant-time comparison
       │
       └─ 3. Return first match (Optional.empty() if none)
 ```
 
-**BCrypt timing**: at strength-12, a single `matches()` call takes ~200–400ms. With N keys in
-the cache, authentication costs up to N × 400ms in the worst case. For the demo table (2 keys),
-this is ~400ms. In production with 10 keys, budget up to 4 seconds — the 60-second client
-timeout in `McpEndToEndIT` was set for exactly this reason.
+**HMAC-SHA256 vs BCrypt**: API keys are 20+ character random strings (entropy ≈ 128 bits).
+BCrypt is designed for low-entropy passwords; its slowness adds latency without security gain
+when the input is already high-entropy. HMAC-SHA256 with a 32-byte server-side pepper is
+equivalent protection (NIST SP 800-63B, FIPS 198-1) at microsecond cost.
 
-If key count grows, consider:
-- Storing a fast lookup prefix (first 8 chars of raw key) in the database, allowing filtering
-  before BCrypt. This does not weaken security if the prefix is never treated as a secret.
-- Using Argon2 (memory-hard) instead of BCrypt — Spring Security's `Argon2PasswordEncoder`
-  is a drop-in replacement and is more resistant to GPU attacks.
+The pepper (`MCP_HMAC_PEPPER`) is the secret, not the algorithm. Rotation procedure:
+1. Generate a new pepper
+2. Re-hash all existing key values against the new pepper (V4-style migration)
+3. Deploy with the new pepper value
 
 ### Why no JWT?
 
@@ -228,23 +229,28 @@ This prevents both:
 - Column name injection (e.g. `"salary; DROP TABLE"`)
 - Blind data extraction through filter values on hidden columns
 
-### MinioConnector: path safety
+### DbContentStore: encrypted content in PostgreSQL (SEC-ENC)
+
+Document chunk text is encrypted with AES-256-GCM before storage in the
+`document_chunks.encrypted_content BYTEA` column.
+
+**Wire format:** `[12B random IV][ciphertext + 16B GCM authentication tag]`
 
 ```java
-private static final String ALLOWED_KEY_PREFIX = "chunks/";
-
-if (minioKey == null || !minioKey.startsWith(ALLOWED_KEY_PREFIX) || minioKey.contains("..")) {
-    log.warn("Rejected suspicious MinIO key: {}", minioKey);
-    return "";
-}
+// ContentEncryptor — no external service, no extra authentication domain
+public byte[] encrypt(String plaintext)  // fresh SecureRandom IV per call
+public String decrypt(byte[] bytes)      // throws SecurityException on tag mismatch
 ```
 
-MinIO keys are **not** file paths in a traditional OS sense, but the MinIO SDK resolves
-key names against a bucket prefix. A key like `../../etc/passwd` or `../admin/secret.json`
-could reach unintended objects if the bucket has flat-namespace data from multiple sources.
+**Key rotation**: generate a new 32-byte key, re-encrypt all rows in a migration (analogous
+to V6), deploy with the new `MCP_CONTENT_KEY`. The `text_preview` column (unencrypted 500-char
+excerpt) is intentionally kept unencrypted — it is used only for FTS indexing and contains
+no more data than what appears in search results.
 
-The `chunks/` prefix restriction also enforces data shape expectations: the code knows that
-all accessible objects are pre-indexed text chunks.
+**Why not pgcrypto?** `pgcrypto` moves the key into the database engine, reducing the attack
+surface value of application-layer encryption. If the database credentials are compromised,
+pgcrypto-encrypted data is also compromised. Application-layer encryption keeps the key
+separate from the ciphertext.
 
 ### DocumentSearchTool: full-text search architecture
 
@@ -269,11 +275,11 @@ variable-length list cleanly in JDBC. The alternative (dynamically generating th
 of `?` placeholders) adds complexity for no security benefit when the values are compile-time
 constants.
 
-**`text_preview` vs `minio_key`**: the database stores a 500-char excerpt in `text_preview`
-for full-text indexing. The full content lives in MinIO under `minio_key`. The search query
-matches against `text_preview` (fast, indexed), then fetches the full content from MinIO for
-each matching row. This two-phase approach avoids storing large blobs in PostgreSQL while
-keeping search performant.
+**`text_preview` vs `encrypted_content`**: the database stores a 500-char excerpt in
+`text_preview` for full-text indexing (unencrypted, because FTS requires plaintext). The full
+content lives in `encrypted_content BYTEA`. The search query matches against `text_preview`
+(fast, GIN-indexed), then fetches and decrypts the full content from the same row. This keeps
+all data in one database, while maintaining encryption for the content that an AI processes.
 
 **`plainto_tsquery` vs `to_tsquery`**: `plainto_tsquery` is used because it accepts natural
 language input and tokenizes it safely. `to_tsquery` requires pre-formatted tsquery syntax
@@ -337,9 +343,11 @@ private final Cache<String, List<ApiKey>> keyCache = Caffeine.newBuilder()
 List<ApiKey> keys = keyCache.get("all", k -> repository.findAll());
 ```
 
-**Why a cache at all?** BCrypt is slow by design. Without caching, every request would trigger
-`repository.findAll()` (one DB round-trip) followed by BCrypt matching against every key
-(N × 200–400ms). For 2 keys this is ~400ms per request; for 10 keys it would be ~4 seconds.
+**Why a cache at all?** Even though HMAC-SHA256 is fast (microseconds), the cache avoids a
+`repository.findAll()` DB round-trip on every request. Without caching, every request triggers
+a full table scan of `api_keys`. For the typical key table (< 100 rows) this is minor, but the
+pattern also ensures cache consistency at the same 60-second granularity as before — unchanged
+by the BCrypt→HMAC migration.
 
 **Why a single entry keyed on `"all"`?** The key table is small (< 100 rows in any realistic
 deployment). The simplest correct approach is to load all keys and BCrypt-match in memory.
@@ -390,7 +398,7 @@ introduces its own spoofing risks if not validated against known proxy IPs.
 
 ## 7. Audit subsystem
 
-### Write path
+### Write path (dual-sink)
 
 ```
 Tool method
@@ -402,9 +410,16 @@ Tool method
     coreSize=2, maxSize=4, queue=500
     RejectedExecutionHandler=CallerRunsPolicy
         │
-        ▼
-  AuditLogRepository.save(entry)   ← JPA/Hibernate → INSERT INTO audit_logs
+        ├─ AuditLogRepository.save(entry)   ← INSERT INTO audit_logs (SEC-020 trigger)
+        │
+        └─ auditLog.info("audit_event")     ← Logback AUDIT logger → /var/log/mcp/audit.json
 ```
+
+**Two independent sinks** (SEC-AUDIT2): the PostgreSQL table is append-only via a row-level
+trigger; a database superuser with `DISABLE TRIGGER ALL` privilege can bypass it. The JSON
+file is written by the JVM process and hardened with `chattr +a` (ext4/xfs append-only flag)
+in production — a superuser cannot overwrite it without root access to the filesystem.
+The `additivity="false"` on the AUDIT logger keeps audit events out of the console log.
 
 **`@Async("auditExecutor")`**: audit writes are decoupled from the request thread. The tool
 method returns to the MCP server and the SSE response begins writing before the audit INSERT
@@ -511,37 +526,25 @@ SSE endpoint not being registered, so all tool calls return 404.
 | Stage | Typical latency | Notes |
 |---|---|---|
 | RateLimiterFilter | < 1ms | In-memory ArrayDeque scan |
-| ApiKeyFilter (cache hit) | 200–400ms | BCrypt `matches()` × N keys |
-| ApiKeyFilter (cache miss) | DB latency + 200–400ms | Rare (once per 60 seconds) |
+| ApiKeyFilter (cache hit) | < 1ms | HMAC-SHA256 `matches()` × N keys |
+| ApiKeyFilter (cache miss) | DB latency + < 1ms | Rare (once per 60 seconds) |
+| RlsContextAspect | < 1ms | `SET LOCAL` within existing transaction |
 | PostgreSQL query (employees) | 2–10ms | Indexed; 5 rows |
 | PostgreSQL FTS (documents) | 5–20ms | GIN index on tsvector |
-| MinIO fetch (per chunk) | 10–50ms | Network + JSON parse |
+| PostgreSQL content fetch + AES decrypt | 1–5ms per chunk | In-process decryption |
 | AuditService.log | async | Does not block response |
 | Spring AI SSE serialisation | 1–5ms | JSON serialisation |
-| **Total (typical tool call)** | **~250–500ms** | Dominated by BCrypt |
+| **Total (typical tool call)** | **~15–50ms** | No longer BCrypt-dominated |
 
-BCrypt cost dominates. The Caffeine cache means this cost is paid at most once per 60 seconds
-per JVM instance, amortized across all concurrent requests within that window (they all share
-the cached list).
+HMAC-SHA256 reduces authentication latency from ~300ms to < 1ms. The dominant cost is now
+PostgreSQL query latency for `maxResults` chunk fetches, which are sequential in the loop.
 
 ### Throughput ceiling
 
-With 2 keys in the cache and BCrypt strength-12 at ~300ms/call:
-- A single request holds a BCrypt check for ~300ms
-- With the default Tomcat thread pool (200 threads), throughput ceiling ≈ 200 / 0.3 ≈ 666 req/s
-- But the rate limiter caps at 60 req/min = 1 req/s per IP
-
-The rate limiter is the binding constraint for any single client. For many clients, BCrypt
-parallelism across Tomcat threads is the ceiling.
-
-### MinIO latency for bulk search results
-
-`DocumentSearchTool` fetches one MinIO object per matching chunk in a sequential loop. For
-`maxResults=10`, this is 10 sequential HTTP round-trips to MinIO, potentially 500ms total.
-
-A future optimization: parallel fetching via `CompletableFuture.allOf(...)` or a reactive
-pipeline. Not implemented because the current use case is single-LLM clients with low QPS,
-not high-throughput batch processing.
+With HMAC at < 1ms and the Caffeine cache, authentication is no longer the bottleneck:
+- Database connection pool (HikariCP default: 10 connections) is the likely ceiling
+- Rate limiter caps at 60 req/min = 1 req/s per IP for any single client
+- For many clients, Tomcat thread pool (200 threads) and DB pool are the ceilings
 
 ---
 
@@ -728,10 +731,20 @@ cannot retrieve the "next page" of a large table. Consider adding an `offset` pa
 with appropriate security review (offset-based pagination is inefficient at scale; keyset
 pagination is preferred).
 
-### MinIO chunk fetching is sequential
+### PostgreSQL content fetch is sequential
 
-See [Performance characteristics](#9-performance-characteristics). Parallelising chunk
-fetches is the highest-impact latency optimization available.
+`DocumentSearchTool` fetches one encrypted chunk per matching row in a sequential loop. For
+`maxResults=10`, this is 10 SELECT + decrypt operations (~1–5ms each). A future optimization:
+batch all chunk UUIDs into a single `SELECT ... WHERE id = ANY(?)` query and decrypt in
+memory. Not implemented — the current QPS is low.
+
+### RLS bypassed if mcpuser is a superuser
+
+`FORCE ROW LEVEL SECURITY` is not enforced for PostgreSQL superusers. If `mcpuser` has
+`rolsuper=true`, the V5 policies have no effect. In production, verify:
+```sql
+SELECT rolsuper FROM pg_roles WHERE rolname = 'mcpuser';  -- must return false
+```
 
 ### No outbound webhook on key revocation
 
@@ -756,12 +769,14 @@ All `SEC-NNN` references in code comments map to findings from the initial secur
 | SEC-009 | Row limit on all database queries (max 500) | `PostgresConnector.query()` LIMIT clause |
 | SEC-010 | TLS enforcement at startup | `StartupValidationConfig` |
 | SEC-012 | Table and column name allowlist | `PostgresConnector.ALLOWED_TABLES`, `buildColumnList()` |
-| SEC-013 | Pinned Docker image tags | `docker-compose.yaml` MinIO image |
 | SEC-014 | Micrometer counters for auth failures, rate limits, tool calls | `ApiKeyFilter`, `RateLimiterFilter`, `AuditService` |
 | SEC-015 | `/actuator/**` requires ADMIN role | `SecurityConfig` |
 | SEC-017 | Prompt injection framing for external content | `DocumentSearchTool` `[EXTERNAL_CONTENT_START/END]` |
 | SEC-018 | Search query length limit (500 chars) | `DocumentSearchTool` null/length check |
-| SEC-019 | MinIO key path traversal prevention | `MinioConnector.fetchChunk()` prefix + `..` check |
 | SEC-020 | Append-only audit log (database trigger) | `V3__key_lifecycle.sql` trigger |
 | SEC-022 | Audit writes never silently dropped (`CallerRunsPolicy`) | `AsyncConfig.auditExecutor()` |
-| SEC-023 | No raw key values in source code | `build.gradle.kts` `verifyHashes` task |
+| SEC-023 | No raw key values in source code | `build.gradle.kts` `computeDemoHashes` task |
+| SEC-HMAC | HMAC-SHA256 API key authentication with server-side pepper | `HmacApiKeyHasher`, `V4__hmac_api_keys.sql` |
+| SEC-RLS | PostgreSQL Row-Level Security for document classification | `RlsContextAspect`, `V5__rls_document_chunks.sql` |
+| SEC-ENC | AES-256-GCM content encryption at rest | `ContentEncryptor`, `DbContentStore`, `V6__encrypted_content_column.sql` |
+| SEC-AUDIT2 | Second append-only audit sink (Logback JSON file) | `AuditService` AUDIT logger, `logback-spring.xml` |

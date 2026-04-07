@@ -16,8 +16,7 @@ Internet
 OVHcloud Managed Kubernetes (GRA7, Gravelines, France)
    └── Namespace: mcp-demo
          ├── mcp-gateway    (2 replicas, 512Mi each)
-         ├── postgresql     (Bitnami Helm chart, 5Gi PV)
-         └── minio          (Bitnami Helm chart, 10Gi PV)
+         └── postgresql     (Bitnami Helm chart, 5Gi PV)
 ```
 
 The cluster is created by Terraform. The apps are deployed with Helm and `kubectl`.
@@ -357,7 +356,7 @@ kubectl apply -f k8s/app/cert-manager-issuer.yaml
 
 ---
 
-## Part 6 — Deploy dependencies (PostgreSQL and MinIO)
+## Part 6 — Deploy dependencies (PostgreSQL)
 
 ### 6.1 Create the namespace
 
@@ -365,16 +364,22 @@ kubectl apply -f k8s/app/cert-manager-issuer.yaml
 kubectl apply -f k8s/app/namespace.yaml
 ```
 
-### 6.2 Generate strong passwords
+### 6.2 Generate strong passwords and secrets
 
 ```bash
 export PG_PASSWORD=$(openssl rand -hex 24)
-export MINIO_PASSWORD=$(openssl rand -hex 24)
+export MCP_HMAC_PEPPER=$(openssl rand -hex 32)    # ≥ 32 chars, for HMAC-SHA256 key auth
+export MCP_CONTENT_KEY=$(openssl rand -hex 32)    # exactly 64 hex chars, for AES-256-GCM
 
-# Save them somewhere safe — you will need them for the app secret
-echo "PG_PASSWORD: $PG_PASSWORD"
-echo "MINIO_PASSWORD: $MINIO_PASSWORD"
+# Save them in your secrets manager — you need them for the Kubernetes Secret
+echo "PG_PASSWORD:      $PG_PASSWORD"
+echo "MCP_HMAC_PEPPER:  $MCP_HMAC_PEPPER"
+echo "MCP_CONTENT_KEY:  $MCP_CONTENT_KEY"
 ```
+
+> `MCP_CONTENT_KEY` must be exactly 64 hex characters (32 bytes). `openssl rand -hex 32`
+> produces exactly this. Store it in a secrets manager (OVH Vault, HashiCorp Vault, or a
+> Kubernetes sealed-secret) — loss of this key means encrypted content is unrecoverable.
 
 ### 6.3 Install PostgreSQL
 
@@ -393,23 +398,6 @@ kubectl get pods -n mcp-demo -l app.kubernetes.io/name=postgresql --watch
 ```
 
 When you see `1/1 Running`, PostgreSQL is ready.
-
-### 6.4 Install MinIO
-
-```bash
-helm upgrade --install minio \
-  oci://registry-1.docker.io/bitnamicharts/minio \
-  -f k8s/deps/minio-values.yaml \
-  --set auth.rootPassword="$MINIO_PASSWORD" \
-  --namespace mcp-demo
-```
-
-```bash
-kubectl get pods -n mcp-demo -l app.kubernetes.io/name=minio --watch
-```
-
-When you see `1/1 Running`, MinIO is ready. The `mcp-documents` bucket is created
-automatically by the Bitnami chart's `defaultBuckets` setting.
 
 ---
 
@@ -432,8 +420,8 @@ kubectl create secret generic mcp-gateway-secrets \
   --from-literal=db-url="$PG_JDBC" \
   --from-literal=db-user="mcpuser" \
   --from-literal=db-password="$PG_PASSWORD" \
-  --from-literal=minio-access-key="minioadmin" \
-  --from-literal=minio-secret-key="$MINIO_PASSWORD"
+  --from-literal=mcp-hmac-pepper="$MCP_HMAC_PEPPER" \
+  --from-literal=mcp-content-key="$MCP_CONTENT_KEY"
 ```
 
 Verify the secret was created (values are intentionally hidden):
@@ -527,6 +515,37 @@ jq '.mdc | {tool: .tool_name, summary: .result_summary}' /var/log/mcp/audit.json
 > **Note:** `chattr +a` requires a supported filesystem (ext4, xfs). On WORM
 > block storage or network filesystems it may not be available — in that case
 > ship events to a separate syslog receiver over TLS for equivalent guarantees.
+
+---
+
+## Part 7.6 — Verify RLS is active (SEC-RLS)
+
+PostgreSQL Row-Level Security blocks `CONFIDENTIAL` rows for non-ADMIN sessions at the
+database level, independently of the application filter. For this to work, the application
+user must **not** be a PostgreSQL superuser (superusers bypass `FORCE ROW LEVEL SECURITY`).
+
+```bash
+# Connect to the PostgreSQL pod
+kubectl exec -n mcp-demo -it deployment/postgresql -- psql -U mcpuser -d mcpgateway
+
+# Verify mcpuser is NOT a superuser (must return 'f')
+SELECT rolsuper FROM pg_roles WHERE rolname = 'mcpuser';
+
+# Verify RLS is enabled on document_chunks
+SELECT relrowsecurity FROM pg_class WHERE relname = 'document_chunks';  -- must return 't'
+
+# Verify the policy exists
+SELECT policyname FROM pg_policies WHERE tablename = 'document_chunks';
+-- must include 'doc_chunks_classification_policy'
+```
+
+If `rolsuper` returns `t`, the application user has too many privileges. Re-create it:
+
+```sql
+CREATE USER mcpuser WITH PASSWORD '...' NOSUPERUSER;
+GRANT CONNECT ON DATABASE mcpgateway TO mcpuser;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO mcpuser;
+```
 
 ---
 
@@ -667,7 +686,9 @@ Common causes:
   an in-cluster URL without SSL. Either add `?sslmode=require` to the JDBC URL (requires
   PostgreSQL TLS setup) or add `MCP_SECURITY_ENFORCE_TLS=false` to the ConfigMap.
   In-cluster PostgreSQL without TLS is acceptable if you trust the cluster network.
-- `Connection refused` to PostgreSQL or MinIO — the dependency pods are not yet ready.
+- `MCP_CONTENT_KEY must be exactly 64 hex characters` — the `mcp-content-key` value in
+  the Kubernetes Secret is missing or malformed. Regenerate with `openssl rand -hex 32`.
+- `Connection refused` to PostgreSQL — the dependency pod is not yet ready.
   Check: `kubectl get pods -n mcp-demo`
 - `Failed to get existing workspaces` during Terraform — see Part 4.2.
 
