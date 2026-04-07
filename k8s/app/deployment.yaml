@@ -27,6 +27,8 @@ spec:
       volumes:
         - name: tmp-dir
           emptyDir: {}
+        - name: log-dir
+          emptyDir: {}
       containers:
         - name: mcp-gateway
           image: YOUR_REGISTRY/mcp-data-gateway:latest  # replace with your image registry
@@ -94,3 +96,5 @@ spec:
           volumeMounts:
             - name: tmp-dir
               mountPath: /tmp
+            - name: log-dir
+              mountPath: /var/log/mcp
