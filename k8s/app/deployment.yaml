@@ -53,26 +53,16 @@ spec:
                 secretKeyRef:
                   name: mcp-gateway-secrets
                   key: db-password
-            - name: MINIO_ENDPOINT
-              valueFrom:
-                configMapKeyRef:
-                  name: mcp-gateway-config
-                  key: minio-endpoint
-            - name: MINIO_ACCESS_KEY
+            - name: MCP_HMAC_PEPPER
               valueFrom:
                 secretKeyRef:
                   name: mcp-gateway-secrets
-                  key: minio-access-key
-            - name: MINIO_SECRET_KEY
+                  key: mcp-hmac-pepper
+            - name: MCP_CONTENT_KEY
               valueFrom:
                 secretKeyRef:
                   name: mcp-gateway-secrets
-                  key: minio-secret-key
-            - name: MINIO_BUCKET
-              valueFrom:
-                configMapKeyRef:
-                  name: mcp-gateway-config
-                  key: minio-bucket
+                  key: mcp-content-key
             - name: JAVA_TOOL_OPTIONS
               value: "-Djava.io.tmpdir=/tmp"
           readinessProbe:

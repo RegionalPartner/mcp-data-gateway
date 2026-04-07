@@ -4,6 +4,4 @@ metadata:
   name: mcp-gateway-config
   namespace: mcp-demo
 data:
-  minio-endpoint: "http://minio:9000"
-  minio-bucket: "mcp-documents"
   spring-profiles-active: "prod"
