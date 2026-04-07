@@ -31,7 +31,7 @@ A Spring Boot MCP server that exposes internal PostgreSQL data and MinIO documen
 docker compose up -d
 
 # App is on http://localhost:8080
-# Test with demo keys:
+# Test with demo keys (local dev only — rotate before production):
 curl -H "X-API-Key: demo-readonly-key-001" http://localhost:8080/actuator/health
 ```
 

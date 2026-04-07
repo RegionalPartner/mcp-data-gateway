@@ -37,5 +37,5 @@ variable "node_flavor" {
 
 variable "desired_nodes" {
   type    = number
-  default = 2
+  default = 1
 }

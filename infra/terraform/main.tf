@@ -29,7 +29,13 @@ resource "ovh_cloud_project_kube_nodepool" "default" {
 
   template {
     metadata {
-      labels = { "pool" = "default" }
+      annotations = {}
+      finalizers  = []
+      labels      = { "pool" = "default" }
+    }
+    spec {
+      unschedulable = false
+      taints        = []
     }
   }
 }
