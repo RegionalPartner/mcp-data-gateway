@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
@@ -27,16 +26,16 @@ class ApiKeyServiceTest {
     private ApiKeyRepository repository;
 
     @Mock
-    private BCryptPasswordEncoder encoder;
+    private HmacApiKeyHasher hasher;
 
     private ApiKeyService service;
 
-    // Raw key used across tests — encoder matching is stubbed
+    // Raw key used across tests — hasher matching is stubbed
     private static final String RAW_KEY = "test-raw-key";
 
     @BeforeEach
     void setUp() {
-        service = new ApiKeyService(repository, encoder);
+        service = new ApiKeyService(repository, hasher);
     }
 
     // -----------------------------------------------------------------------
@@ -47,7 +46,7 @@ class ApiKeyServiceTest {
     void authenticate_validKey_returnsKey() {
         ApiKey key = buildKey("hash-ok", AccessRole.READ_ONLY, false, null);
         when(repository.findAll()).thenReturn(List.of(key));
-        when(encoder.matches(RAW_KEY, "hash-ok")).thenReturn(true);
+        when(hasher.matches(RAW_KEY, "hash-ok")).thenReturn(true);
 
         Optional<ApiKey> result = service.authenticate(RAW_KEY);
 
@@ -55,7 +54,7 @@ class ApiKeyServiceTest {
     }
 
     // -----------------------------------------------------------------------
-    // Revoked key — must be rejected even if BCrypt matches
+    // Revoked key — must be rejected even if HMAC matches
     // -----------------------------------------------------------------------
 
     @Test
@@ -90,7 +89,7 @@ class ApiKeyServiceTest {
     void authenticate_futureExpiry_returnsKey() {
         ApiKey key = buildKey("hash-future", AccessRole.ADMIN, false, Instant.now().plusSeconds(3600));
         when(repository.findAll()).thenReturn(List.of(key));
-        when(encoder.matches(RAW_KEY, "hash-future")).thenReturn(true);
+        when(hasher.matches(RAW_KEY, "hash-future")).thenReturn(true);
 
         Optional<ApiKey> result = service.authenticate(RAW_KEY);
 
@@ -105,7 +104,7 @@ class ApiKeyServiceTest {
     void authenticate_cachesKeyList_noRepeatDbCall() {
         ApiKey key = buildKey("hash-cache", AccessRole.READ_ONLY, false, null);
         when(repository.findAll()).thenReturn(List.of(key));
-        when(encoder.matches(RAW_KEY, "hash-cache")).thenReturn(true);
+        when(hasher.matches(RAW_KEY, "hash-cache")).thenReturn(true);
 
         service.authenticate(RAW_KEY);
         service.authenticate(RAW_KEY);
@@ -121,7 +120,7 @@ class ApiKeyServiceTest {
     void invalidateCache_forcesReload() {
         ApiKey key = buildKey("hash-reload", AccessRole.READ_ONLY, false, null);
         when(repository.findAll()).thenReturn(List.of(key));
-        when(encoder.matches(RAW_KEY, "hash-reload")).thenReturn(true);
+        when(hasher.matches(RAW_KEY, "hash-reload")).thenReturn(true);
 
         service.authenticate(RAW_KEY);
         service.invalidateCache();
@@ -131,14 +130,14 @@ class ApiKeyServiceTest {
     }
 
     // -----------------------------------------------------------------------
-    // Non-matching key — BCrypt check fails, must return empty
+    // Non-matching key — HMAC check fails, must return empty
     // -----------------------------------------------------------------------
 
     @Test
     void authenticate_wrongKey_returnsEmpty() {
         ApiKey key = buildKey("hash-wrong", AccessRole.READ_ONLY, false, null);
         when(repository.findAll()).thenReturn(List.of(key));
-        when(encoder.matches(RAW_KEY, "hash-wrong")).thenReturn(false);
+        when(hasher.matches(RAW_KEY, "hash-wrong")).thenReturn(false);
 
         Optional<ApiKey> result = service.authenticate(RAW_KEY);
 

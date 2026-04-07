@@ -14,13 +14,9 @@ import org.springframework.context.annotation.Configuration;
 public class StartupValidationConfig {
 
     private final String dbUrl;
-    private final String minioEndpoint;
 
-    public StartupValidationConfig(
-            @Value("${spring.datasource.url}") String dbUrl,
-            @Value("${minio.endpoint}") String minioEndpoint) {
+    public StartupValidationConfig(@Value("${spring.datasource.url}") String dbUrl) {
         this.dbUrl = dbUrl;
-        this.minioEndpoint = minioEndpoint;
     }
 
     @PostConstruct
@@ -29,12 +25,6 @@ public class StartupValidationConfig {
             throw new IllegalStateException(
                 "DB_URL must contain 'sslmode=require' in production. "
                 + "Add ?sslmode=require to the JDBC URL, or set "
-                + "mcp.security.enforce-tls=false to suppress this check in non-prod environments.");
-        }
-        if (!minioEndpoint.startsWith("https://")) {
-            throw new IllegalStateException(
-                "MINIO_ENDPOINT must use HTTPS in production. "
-                + "Update the MINIO_ENDPOINT value to start with https://, or set "
                 + "mcp.security.enforce-tls=false to suppress this check in non-prod environments.");
         }
     }

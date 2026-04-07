@@ -2,11 +2,6 @@ import com.github.spotbugs.snom.Confidence
 import com.github.spotbugs.snom.Effort
 import com.github.spotbugs.snom.SpotBugsTask
 
-buildscript {
-    dependencies {
-        classpath("org.springframework.security:spring-security-crypto:6.3.3")
-    }
-}
 
 plugins {
     java
@@ -64,8 +59,8 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
 
-    // MinIO S3-compatible storage
-    implementation("io.minio:minio:8.5.9")
+    // AOP — used by RlsContextAspect to inject SET LOCAL per @Tool call (SEC-RLS)
+    implementation("org.springframework.boot:spring-boot-starter-aop")
 
     // In-memory cache for API key list (SEC-003)
     implementation("com.github.ben-manes.caffeine:caffeine")
@@ -79,7 +74,6 @@ dependencies {
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
-    testImplementation("org.testcontainers:minio")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -97,7 +91,7 @@ tasks.test {
 
 // ── Integration tests (Testcontainers — Docker required) ───────────────────
 val integrationTest by tasks.registering(Test::class) {
-    description = "Runs integration tests with Testcontainers (PostgreSQL + MinIO)"
+    description = "Runs integration tests with Testcontainers (PostgreSQL)"
     group = "verification"
     testClassesDirs = sourceSets["integrationTest"].output.classesDirs
     classpath = sourceSets["integrationTest"].runtimeClasspath
@@ -159,21 +153,21 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
-// SEC-023: key values must come from env vars — never hardcoded in source
-tasks.register("verifyHashes") {
+// SEC-023: key values must come from env vars — never hardcoded in source.
+// Prints HMAC-SHA256 hashes for the two demo keys using the configured pepper.
+// Usage: MCP_HMAC_PEPPER=<pepper> ./gradlew computeDemoHashes
+tasks.register("computeDemoHashes") {
     doLast {
-        val enc = org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(12)
-        val hash1 = "\$2a\$12\$KjSltdyBNKZ7bZ7habe1meKexuEliqEElwocLKsjJ5WEJzfHl65tS"
-        val hash2 = "\$2a\$12\$zh883gLsNBA58UHbsTmlw.lq2GwpOzv2KlfNVCOrDH6eeKGhigcyS"
-        val key1 = System.getenv("DEMO_READONLY_KEY")
-            ?: error("Set DEMO_READONLY_KEY env var — never put raw key values in source")
-        val key2 = System.getenv("DEMO_ADMIN_KEY")
-            ?: error("Set DEMO_ADMIN_KEY env var — never put raw key values in source")
-        println("hash1 matches DEMO_READONLY_KEY: ${enc.matches(key1, hash1)}")
-        println("hash2 matches DEMO_ADMIN_KEY: ${enc.matches(key2, hash2)}")
-        if (!enc.matches(key1, hash1)) {
-            println("NEW hash for DEMO_READONLY_KEY: ${enc.encode(key1)}")
-            println("NEW hash for DEMO_ADMIN_KEY: ${enc.encode(key2)}")
-        }
+        val pepper = System.getenv("MCP_HMAC_PEPPER")
+            ?: error("Set MCP_HMAC_PEPPER env var — never put pepper values in source")
+        val readonlyKey = System.getenv("DEMO_READONLY_KEY") ?: "demo-readonly-key-001"
+        val adminKey = System.getenv("DEMO_ADMIN_KEY") ?: "demo-admin-key-001"
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(pepper.toByteArray(), "HmacSHA256"))
+        val hash1 = mac.doFinal(readonlyKey.toByteArray()).joinToString("") { "%02x".format(it) }
+        mac.reset()
+        val hash2 = mac.doFinal(adminKey.toByteArray()).joinToString("") { "%02x".format(it) }
+        println("HMAC hash for DEMO_READONLY_KEY ($readonlyKey): $hash1")
+        println("HMAC hash for DEMO_ADMIN_KEY    ($adminKey): $hash2")
     }
 }

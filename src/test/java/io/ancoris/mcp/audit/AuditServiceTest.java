@@ -1,13 +1,17 @@
 package io.ancoris.mcp.audit;
 
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.UUID;
@@ -27,10 +31,26 @@ class AuditServiceTest {
 
     private AuditService auditService;
 
+    // Logback ListAppender attached to the "AUDIT" logger for unit test assertions
+    private ListAppender<ILoggingEvent> listAppender;
+    private ch.qos.logback.classic.Logger auditLogger;
+
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         auditService = new AuditService(repository, meterRegistry);
+
+        // Attach a ListAppender to the "AUDIT" logger so tests can inspect events.
+        // Note: @Async is not active in unit tests (no Spring context), so log() is synchronous.
+        auditLogger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger("AUDIT");
+        listAppender = new ListAppender<>();
+        listAppender.start();
+        auditLogger.addAppender(listAppender);
+    }
+
+    @AfterEach
+    void tearDown() {
+        auditLogger.detachAppender(listAppender);
     }
 
     // -----------------------------------------------------------------------
@@ -77,5 +97,37 @@ class AuditServiceTest {
         auditService.log("authentication_failure", null, Map.of("reason", "missing_key"), "rejected");
 
         verify(repository).save(any(AuditLog.class));
+    }
+
+    // -----------------------------------------------------------------------
+    // SEC-AUDIT2: log() must emit an event to the AUDIT logger
+    // -----------------------------------------------------------------------
+
+    @Test
+    void log_writesEventToAuditLogger() {
+        UUID keyId = UUID.randomUUID();
+
+        auditService.log("search_documents", keyId, Map.of("query", "budget"), "2 fragments");
+
+        assertThat(listAppender.list).hasSize(1);
+        ILoggingEvent event = listAppender.list.get(0);
+        assertThat(event.getMessage()).isEqualTo("audit_event");
+        assertThat(event.getMDCPropertyMap())
+                .containsEntry("tool_name", "search_documents")
+                .containsEntry("result_summary", "2 fragments")
+                .containsEntry("api_key_id", keyId.toString());
+    }
+
+    // -----------------------------------------------------------------------
+    // SEC-AUDIT2: null apiKeyId must write empty string, not "null", to MDC
+    // -----------------------------------------------------------------------
+
+    @Test
+    void log_nullApiKeyId_writesEmptyStringToMdc() {
+        auditService.log("authentication_failure", null, Map.of(), "rejected");
+
+        assertThat(listAppender.list).hasSize(1);
+        assertThat(listAppender.list.get(0).getMDCPropertyMap())
+                .containsEntry("api_key_id", "");
     }
 }

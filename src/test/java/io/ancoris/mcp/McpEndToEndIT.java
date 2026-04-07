@@ -1,10 +1,7 @@
 package io.ancoris.mcp;
 
+import io.ancoris.mcp.connector.ContentEncryptor;
 import io.ancoris.mcp.integration.AbstractIntegrationTest;
-import io.minio.BucketExistsArgs;
-import io.minio.MakeBucketArgs;
-import io.minio.MinioClient;
-import io.minio.PutObjectArgs;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -12,10 +9,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
-import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
@@ -50,7 +47,6 @@ class McpEndToEndIT extends AbstractIntegrationTest {
 
     // Must match McpServerStreamableHttpProperties default (spring.ai.mcp.server.protocol: STREAMABLE)
     private static final String MCP_PATH = "/mcp";
-    private static final String TEST_BUCKET = "mcp-test-documents";
 
     private static final String READ_ONLY_KEY = "demo-readonly-key-001";
     private static final String ADMIN_KEY = "demo-admin-key-001";
@@ -59,25 +55,46 @@ class McpEndToEndIT extends AbstractIntegrationTest {
     private WebTestClient webTestClient;
 
     @Autowired
-    private MinioClient minioClient;
+    private ContentEncryptor contentEncryptor;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     /** Shared MCP session established once for the class. */
     private String sessionId;
 
     // -----------------------------------------------------------------------
-    // Setup: MinIO fixtures + MCP session handshake
+    // Setup: encrypted DB fixtures + MCP session handshake
     // -----------------------------------------------------------------------
 
     @BeforeAll
-    void setUpAll() throws Exception {
-        // BCrypt strength-12 hashes in V2__seed.sql may take several seconds per check.
-        // Allow up to 60 seconds for tool calls that validate the API key.
+    void setUpAll() {
         webTestClient = webTestClient.mutate()
                 .responseTimeout(Duration.ofSeconds(60))
                 .build();
 
-        uploadMinioFixtures();
+        populateEncryptedContent();
         initializeMcpSession();
+    }
+
+    private void populateEncryptedContent() {
+        encryptAndStore("rapport-annuel-2024-chunk-00.json",
+                "Le rapport annuel 2024 présente les résultats consolidés de l'Agence de Développement de Normandie.");
+        encryptAndStore("rapport-annuel-2024-chunk-01.json",
+                "Les investissements en infrastructure numérique ont augmenté de 23% par rapport à l'exercice précédent.");
+        encryptAndStore("rapport-annuel-2024-chunk-02.json",
+                "Le bilan énergétique des datacenters normands montre une réduction de 15% de la consommation électrique.");
+        encryptAndStore("politique-rh-v3-chunk-00.json",
+                "La politique RH version 3 définit les procédures de recrutement et d'évaluation des compétences.");
+        encryptAndStore("note-technique-securite-chunk-00.json",
+                "Cette note technique décrit les bonnes pratiques de sécurité informatique applicables à tous les agents.");
+    }
+
+    private void encryptAndStore(String minioKeyFragment, String text) {
+        byte[] encrypted = contentEncryptor.encrypt(text);
+        jdbc.update(
+                "UPDATE document_chunks SET encrypted_content = ? WHERE minio_key LIKE ?",
+                encrypted, "%" + minioKeyFragment);
     }
 
     private void initializeMcpSession() {
@@ -331,35 +348,5 @@ class McpEndToEndIT extends AbstractIntegrationTest {
         return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\","
                 + "\"params\":{\"name\":\"" + toolName + "\","
                 + "\"arguments\":" + argumentsJson + "}}";
-    }
-
-    private void uploadMinioFixtures() throws Exception {
-        boolean exists = minioClient.bucketExists(
-                BucketExistsArgs.builder().bucket(TEST_BUCKET).build());
-        if (!exists) {
-            minioClient.makeBucket(MakeBucketArgs.builder().bucket(TEST_BUCKET).build());
-        }
-        uploadChunk("chunks/rapport-annuel-2024-chunk-00.json",
-                "Le rapport annuel 2024 présente les résultats consolidés de l'Agence de Développement de Normandie.");
-        uploadChunk("chunks/rapport-annuel-2024-chunk-01.json",
-                "Les investissements en infrastructure numérique ont augmenté de 23% par rapport à l'exercice précédent.");
-        uploadChunk("chunks/rapport-annuel-2024-chunk-02.json",
-                "Le bilan énergétique des datacenters normands montre une réduction de 15% de la consommation électrique.");
-        uploadChunk("chunks/politique-rh-v3-chunk-00.json",
-                "La politique RH version 3 définit les procédures de recrutement et d'évaluation des compétences.");
-        uploadChunk("chunks/note-technique-securite-chunk-00.json",
-                "Cette note technique décrit les bonnes pratiques de sécurité informatique applicables à tous les agents.");
-    }
-
-    private void uploadChunk(String key, String text) throws Exception {
-        String json = "{\"text\":\"" + text.replace("\"", "\\\"") + "\"}";
-        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
-        minioClient.putObject(
-                PutObjectArgs.builder()
-                        .bucket(TEST_BUCKET)
-                        .object(key)
-                        .stream(new ByteArrayInputStream(bytes), bytes.length, -1)
-                        .contentType("application/json")
-                        .build());
     }
 }
