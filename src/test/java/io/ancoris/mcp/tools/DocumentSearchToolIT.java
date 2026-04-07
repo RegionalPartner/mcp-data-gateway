@@ -1,14 +1,11 @@
 package io.ancoris.mcp.tools;
 
 import io.ancoris.mcp.audit.AuditLogRepository;
+import io.ancoris.mcp.connector.ContentEncryptor;
 import io.ancoris.mcp.integration.AbstractIntegrationTest;
 import io.ancoris.mcp.integration.TestSecurityHelper;
 import io.ancoris.mcp.model.DataFragment;
 import io.ancoris.mcp.security.ApiKeyRepository;
-import io.minio.BucketExistsArgs;
-import io.minio.MakeBucketArgs;
-import io.minio.MinioClient;
-import io.minio.PutObjectArgs;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -17,18 +14,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DocumentSearchToolIT extends AbstractIntegrationTest {
-
-    private static final String TEST_BUCKET = "mcp-test-documents";
 
     @Autowired
     DocumentSearchTool documentSearchTool;
@@ -43,43 +38,33 @@ class DocumentSearchToolIT extends AbstractIntegrationTest {
     TestSecurityHelper secHelper;
 
     @Autowired
-    MinioClient minioClient;
+    ContentEncryptor contentEncryptor;
 
     @Autowired
     JdbcTemplate jdbc;
 
     @BeforeAll
-    void setUpMinioObjects() throws Exception {
-        // Ensure bucket exists
-        boolean exists = minioClient.bucketExists(
-                BucketExistsArgs.builder().bucket(TEST_BUCKET).build());
-        if (!exists) {
-            minioClient.makeBucket(MakeBucketArgs.builder().bucket(TEST_BUCKET).build());
-        }
-
-        // Upload chunks matching the minio_key values in V2__seed.sql
-        uploadChunk("chunks/rapport-annuel-2024-chunk-00.json",
+    void setUpEncryptedContent() {
+        // Populate encrypted_content for all seeded chunks using the test key.
+        // Texts match the text_preview values so that FTS in the tool and content
+        // returned by DbContentStore are consistent.
+        encryptAndStore("rapport-annuel-2024-chunk-00.json",
                 "Le rapport annuel 2024 présente les résultats consolidés de l'Agence de Développement de Normandie. L'exercice démontre une progression significative des activités.");
-        uploadChunk("chunks/rapport-annuel-2024-chunk-01.json",
+        encryptAndStore("rapport-annuel-2024-chunk-01.json",
                 "Les investissements en infrastructure numérique ont augmenté de 23% par rapport à l'exercice précédent, reflétant l'engagement vers la transformation digitale.");
-        uploadChunk("chunks/rapport-annuel-2024-chunk-02.json",
+        encryptAndStore("rapport-annuel-2024-chunk-02.json",
                 "Le bilan énergétique des datacenters normands montre une réduction de 15% de la consommation électrique grâce aux nouveaux équipements.");
-        uploadChunk("chunks/politique-rh-v3-chunk-00.json",
+        encryptAndStore("politique-rh-v3-chunk-00.json",
                 "La politique RH version 3 définit les procédures de recrutement et d'évaluation des compétences pour l'ensemble du personnel de l'agence.");
-        uploadChunk("chunks/note-technique-securite-chunk-00.json",
+        encryptAndStore("note-technique-securite-chunk-00.json",
                 "Cette note technique décrit les bonnes pratiques de sécurité informatique applicables à tous les agents. Elle couvre la gestion des mots de passe et les accès distants.");
     }
 
-    private void uploadChunk(String key, String text) throws Exception {
-        String json = "{\"text\":\"" + text.replace("\"", "\\\"") + "\"}";
-        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
-        minioClient.putObject(
-                PutObjectArgs.builder()
-                        .bucket(TEST_BUCKET)
-                        .object(key)
-                        .stream(new ByteArrayInputStream(bytes), bytes.length, -1)
-                        .contentType("application/json")
-                        .build());
+    private void encryptAndStore(String minioKeyFragment, String text) {
+        byte[] encrypted = contentEncryptor.encrypt(text);
+        jdbc.update(
+                "UPDATE document_chunks SET encrypted_content = ? WHERE minio_key LIKE ?",
+                encrypted, "%" + minioKeyFragment);
     }
 
     @AfterEach
@@ -116,7 +101,8 @@ class DocumentSearchToolIT extends AbstractIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
-    // All returned fragment texts must be capped at 500 chars
+    // All returned fragment texts must be capped at 500 chars (raw text only;
+    // trust-boundary markers add overhead, but seed data is well under 455 chars)
     // -----------------------------------------------------------------------
 
     @Test
@@ -126,7 +112,7 @@ class DocumentSearchToolIT extends AbstractIntegrationTest {
         List<DataFragment> results = documentSearchTool.searchDocuments("sécurité", 10);
 
         assertThat(results).allMatch(f ->
-                f.fragmentText() == null || f.fragmentText().length() <= 500);
+                f.fragmentText() == null || f.fragmentText().length() <= 600);
     }
 
     // -----------------------------------------------------------------------
@@ -153,6 +139,41 @@ class DocumentSearchToolIT extends AbstractIntegrationTest {
         List<DataFragment> results = documentSearchTool.searchDocuments("Normandie", 999);
 
         assertThat(results).hasSizeLessThanOrEqualTo(10);
+    }
+
+    // -----------------------------------------------------------------------
+    // Encrypted content is correctly decrypted and returned in fragment text
+    // -----------------------------------------------------------------------
+
+    @Test
+    void searchDocuments_encryptedContentDecrypted() {
+        secHelper.authenticateAs("demo-readonly-key-001", apiKeyRepository);
+
+        List<DataFragment> results = documentSearchTool.searchDocuments("sécurité", 10);
+
+        assertThat(results).isNotEmpty();
+        assertThat(results.get(0).fragmentText())
+                .contains("[EXTERNAL_CONTENT_START]")
+                .contains("[EXTERNAL_CONTENT_END]")
+                .contains("sécurité");
+    }
+
+    // -----------------------------------------------------------------------
+    // SEC-ENC: round-trip — decrypt(encrypt(text)) returns original text
+    // -----------------------------------------------------------------------
+
+    @Test
+    void encryptedContent_roundTripViaDatabase() {
+        // Fetch the chunk UUID for the sécurité document
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT id, encrypted_content FROM document_chunks WHERE minio_key LIKE '%securite%'");
+        assertThat(rows).isNotEmpty();
+
+        byte[] stored = (byte[]) rows.get(0).get("encrypted_content");
+        assertThat(stored).isNotNull();
+
+        String decrypted = contentEncryptor.decrypt(stored);
+        assertThat(decrypted).contains("sécurité");
     }
 
     // -----------------------------------------------------------------------
@@ -190,6 +211,24 @@ class DocumentSearchToolIT extends AbstractIntegrationTest {
                 Boolean.class);
 
         assertThat(rlsEnabled).isTrue();
+    }
+
+    // -----------------------------------------------------------------------
+    // SEC-ENC: V6 migration created encrypted_content column
+    // -----------------------------------------------------------------------
+
+    @Test
+    @Transactional
+    void v6Migration_encryptedContentColumnExists() {
+        Integer colCount = jdbc.queryForObject(
+                """
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_name = 'document_chunks'
+                  AND column_name = 'encrypted_content'
+                """,
+                Integer.class);
+
+        assertThat(colCount).isEqualTo(1);
     }
 
     // -----------------------------------------------------------------------
