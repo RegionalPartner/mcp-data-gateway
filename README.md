@@ -1,6 +1,6 @@
 # mcp-data-gateway
 
-A Spring Boot MCP server that exposes internal PostgreSQL data and MinIO documents to AI models through secured, role-based API endpoints.
+A Spring Boot MCP server that exposes internal PostgreSQL data and documents to AI models through secured, role-based API endpoints.
 
 **For AI agents:** see [`docs/for-ai-agents.md`](docs/for-ai-agents.md)
 
@@ -16,8 +16,7 @@ A Spring Boot MCP server that exposes internal PostgreSQL data and MinIO documen
 ## Stack
 
 - Java 21, Spring Boot 3.5, Spring AI MCP Server (streamable-http)
-- PostgreSQL 16 (data + audit logs, migrations via Flyway)
-- MinIO (document object storage)
+- PostgreSQL 16 (data + encrypted document storage + audit logs, migrations via Flyway)
 - Testcontainers for integration tests
 
 ---
@@ -59,10 +58,8 @@ All sensitive values are injected via environment variables:
 | `DB_URL` | JDBC URL | `jdbc:postgresql://localhost:5432/mcpgateway` |
 | `DB_USER` | DB username | `mcpuser` |
 | `DB_PASSWORD` | DB password | `mcppass` |
-| `MINIO_ENDPOINT` | MinIO S3 URL | `http://localhost:9000` |
-| `MINIO_ACCESS_KEY` | MinIO access key | `minioadmin` |
-| `MINIO_SECRET_KEY` | MinIO secret key | `minioadmin` |
-| `MINIO_BUCKET` | Bucket name | `mcp-documents` |
+| `MCP_HMAC_PEPPER` | Server-side pepper for API key hashing | dev default (not secure) |
+| `MCP_CONTENT_KEY` | AES-256 key (64 hex chars) for document encryption | dev default (all zeros) |
 
 The `dev` profile (`SPRING_PROFILES_ACTIVE=dev`) loads `application-dev.yaml` with the defaults above and enables debug logging.
 
@@ -74,7 +71,7 @@ The `dev` profile (`SPRING_PROFILES_ACTIVE=dev`) loads `application-dev.yaml` wi
 src/main/java/io/ancoris/mcp/
   tools/          # MCP tools: DatabaseQueryTool, DocumentSearchTool, SourceListTool
   security/       # ApiKeyFilter, ApiKeyService — BCrypt key auth
-  connector/      # PostgresConnector (allowlist + RBAC), MinioConnector
+  connector/      # PostgresConnector (allowlist + RBAC), DbContentStore, ContentEncryptor
   audit/          # AuditService, AuditLog — logs every tool call
   model/          # ApiKey, AccessRole, DataFragment
   config/         # SecurityConfig, McpConfig, PasswordEncoderConfig
@@ -144,29 +141,26 @@ docker run -p 8080:8080 \
 
 ### Kubernetes (OVH)
 
-Infrastructure is managed with Terraform (OVH provider) and Helm charts:
+Infrastructure is managed with Terraform (OVH provider). A Makefile wraps the full lifecycle:
 
 ```bash
-# Provision cluster
-cd infra/terraform && terraform apply
+# Copy and fill in credentials
+cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
 
-# Deploy dependencies
-helm install postgres  k8s/deps/postgres/
-helm install minio     k8s/deps/minio/
+# Provision cluster + deploy everything (~20 min first run)
+source ~/.ovh-terraform.env
+make up
 
-# Create secrets (never committed)
-kubectl create secret generic mcp-gateway-secrets \
-  --from-literal=db-url=... \
-  --from-literal=db-user=... \
-  --from-literal=db-password=... \
-  --from-literal=minio-access-key=... \
-  --from-literal=minio-secret-key=...
-
-# Deploy app
-kubectl apply -f k8s/
+# Stop cluster and billing (~5 min, secrets preserved in .deploy.env)
+make down
 ```
 
-**Ingress host:** `mcp.ancoris-demo.io` (TLS via cert-manager / Let's Encrypt)
+Secrets are auto-generated on first `make up` and saved to `.deploy.env` (gitignored).
+**Keep `.deploy.env` safe — loss of `MCP_CONTENT_KEY` makes encrypted documents unrecoverable.**
+
+Before running `make up`, set your domain in `k8s/app/ingress.yaml` and email in
+`k8s/app/cert-manager-issuer.yaml` for TLS (Let's Encrypt). See `docs/OVH_DEPLOYMENT.md`
+for the full walkthrough.
 
 ---
 
