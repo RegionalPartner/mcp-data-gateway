@@ -31,6 +31,30 @@
         <Bug pattern="SQL_INJECTION_SPRING_JDBC"/>
     </Match>
 
+    <!-- RlsContextAspect sets a PostgreSQL session variable via SET LOCAL. PostgreSQL does
+         not support parameterized SET LOCAL statements, so string interpolation is
+         unavoidable. The interpolated value comes exclusively from AccessRole.name(),
+         which is a Java enum — never from user input. -->
+    <Match>
+        <Class name="io.ancoris.mcp.security.RlsContextAspect"/>
+        <Bug pattern="SQL_INJECTION_SPRING_JDBC"/>
+    </Match>
+
+    <!-- Test classes use JdbcTemplate with hardcoded SQL strings in mock stubs or
+         test-fixture setup. No user input is involved; these are false positives. -->
+    <Match>
+        <Class name="io.ancoris.mcp.connector.DbContentStoreTest"/>
+        <Bug pattern="SQL_INJECTION_SPRING_JDBC"/>
+    </Match>
+    <Match>
+        <Class name="io.ancoris.mcp.connector.PostgresConnectorTest"/>
+        <Bug pattern="SQL_INJECTION_SPRING_JDBC"/>
+    </Match>
+    <Match>
+        <Class name="io.ancoris.mcp.security.RlsContextAspectTest"/>
+        <Bug pattern="SQL_INJECTION_SPRING_JDBC"/>
+    </Match>
+
     <!-- Suppress false positives from Spring-generated proxy classes -->
     <Match>
         <Class name="~.*\$\$.*"/>

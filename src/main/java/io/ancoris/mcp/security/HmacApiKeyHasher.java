@@ -21,7 +21,7 @@ import java.util.HexFormat;
  * that could distinguish a hash mismatch from a match by CPU time.
  */
 @Component
-public class HmacApiKeyHasher {
+public final class HmacApiKeyHasher {
 
     private static final String ALGORITHM = "HmacSHA256";
     private static final int MIN_PEPPER_LENGTH = 32;

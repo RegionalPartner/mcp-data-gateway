@@ -18,7 +18,7 @@ import java.util.HexFormat;
  * Key source:  mcp.content.key (${MCP_CONTENT_KEY}) — exactly 64 hex chars (32 bytes).
  */
 @Component
-public class ContentEncryptor {
+public final class ContentEncryptor {
 
     private static final int IV_LENGTH_BYTES = 12;
     private static final int GCM_TAG_BITS = 128;
