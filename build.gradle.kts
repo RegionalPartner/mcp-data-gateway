@@ -59,9 +59,6 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
 
-    // MinIO S3-compatible storage
-    implementation("io.minio:minio:8.5.9")
-
     // AOP — used by RlsContextAspect to inject SET LOCAL per @Tool call (SEC-RLS)
     implementation("org.springframework.boot:spring-boot-starter-aop")
 
@@ -77,7 +74,6 @@ dependencies {
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
-    testImplementation("org.testcontainers:minio")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -95,7 +91,7 @@ tasks.test {
 
 // ── Integration tests (Testcontainers — Docker required) ───────────────────
 val integrationTest by tasks.registering(Test::class) {
-    description = "Runs integration tests with Testcontainers (PostgreSQL + MinIO)"
+    description = "Runs integration tests with Testcontainers (PostgreSQL)"
     group = "verification"
     testClassesDirs = sourceSets["integrationTest"].output.classesDirs
     classpath = sourceSets["integrationTest"].runtimeClasspath
