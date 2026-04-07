@@ -32,8 +32,8 @@ jobs:
       - name: Grant Gradle wrapper execute permission
         run: chmod +x gradlew
 
-      - name: Run integration tests
-        run: ./gradlew test --info
+      - name: Run full build (test, Checkstyle, SpotBugs, JaCoCo)
+        run: ./gradlew build
         env:
           TESTCONTAINERS_RYUK_DISABLED: "true"
 
@@ -49,6 +49,20 @@ jobs:
         with:
           name: test-reports
           path: build/reports/tests/test/
+
+      - name: Upload SpotBugs reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spotbugs-reports
+          path: build/reports/spotbugs/
+
+      - name: Upload JaCoCo coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-report
+          path: build/reports/jacoco/test/html/
 
   owasp-check:
     name: OWASP Dependency Check
