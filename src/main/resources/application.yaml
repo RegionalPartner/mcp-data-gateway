@@ -8,6 +8,12 @@ spring:
         name: mcp-data-gateway
         version: 1.0.0
         protocol: STREAMABLE
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        enabled: false   # RAG-001: embedding only — no chat model needed
+      embedding:
+        model: nomic-embed-text
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}

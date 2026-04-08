@@ -2,6 +2,7 @@ package io.ancoris.mcp.config;
 
 import io.ancoris.mcp.tools.DatabaseQueryTool;
 import io.ancoris.mcp.tools.DocumentSearchTool;
+import io.ancoris.mcp.tools.SemanticSearchTool;
 import io.ancoris.mcp.tools.SourceListTool;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
@@ -23,9 +24,10 @@ public class McpConfig {
     @Bean
     public ToolCallbackProvider mcpTools(DatabaseQueryTool databaseQueryTool,
                                           DocumentSearchTool documentSearchTool,
+                                          SemanticSearchTool semanticSearchTool,
                                           SourceListTool sourceListTool) {
         return MethodToolCallbackProvider.builder()
-                .toolObjects(databaseQueryTool, documentSearchTool, sourceListTool)
+                .toolObjects(databaseQueryTool, documentSearchTool, semanticSearchTool, sourceListTool)
                 .build();
     }
 }

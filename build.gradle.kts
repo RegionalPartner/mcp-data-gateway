@@ -54,6 +54,11 @@ dependencies {
     // Spring AI MCP Server (Streamable HTTP via WebMVC)
     implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
 
+    // Spring AI Ollama core — OllamaEmbeddingModel for RAG semantic search (RAG-001)
+    // Using the core module instead of the starter to avoid spring-ai-retry-autoconfigure,
+    // which requires org.springframework.core.retry.RetryListener (Spring 7+, not in Boot 3.5)
+    implementation("org.springframework.ai:spring-ai-ollama")
+
     // Database
     runtimeOnly("org.postgresql:postgresql:42.7.3")
     implementation("org.flywaydb:flyway-core")
