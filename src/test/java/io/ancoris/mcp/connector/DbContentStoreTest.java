@@ -7,6 +7,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,27 +44,40 @@ class DbContentStoreTest {
         String original = "Le rapport annuel 2024 présente les résultats.";
         byte[] encrypted = encryptor.encrypt(original);
 
-        when(jdbc.queryForObject(any(String.class), eq(byte[].class), eq(id)))
-                .thenReturn(encrypted);
+        when(jdbc.queryForMap(any(String.class), eq(id)))
+                .thenReturn(Map.of("encrypted_content", encrypted, "text_preview", "preview"));
 
-        String result = store.fetchChunk(id);
-
-        assertThat(result).isEqualTo(original);
+        assertThat(store.fetchChunk(id)).isEqualTo(original);
     }
 
     // -----------------------------------------------------------------------
-    // null encrypted_content (row found, column is NULL) → empty string
+    // null encrypted_content → falls back to text_preview
     // -----------------------------------------------------------------------
 
     @Test
-    void fetchChunk_nullEncryptedContent_returnsEmpty() {
+    void fetchChunk_nullEncryptedContent_returnsTextPreview() {
         UUID id = UUID.randomUUID();
-        when(jdbc.queryForObject(any(String.class), eq(byte[].class), eq(id)))
-                .thenReturn(null);
+        Map<String, Object> row = new HashMap<>();
+        row.put("encrypted_content", null);
+        row.put("text_preview", "Aperçu du document.");
+        when(jdbc.queryForMap(any(String.class), eq(id))).thenReturn(row);
 
-        String result = store.fetchChunk(id);
+        assertThat(store.fetchChunk(id)).isEqualTo("Aperçu du document.");
+    }
 
-        assertThat(result).isEmpty();
+    // -----------------------------------------------------------------------
+    // null encrypted_content + null text_preview → empty string
+    // -----------------------------------------------------------------------
+
+    @Test
+    void fetchChunk_bothNull_returnsEmpty() {
+        UUID id = UUID.randomUUID();
+        Map<String, Object> row = new HashMap<>();
+        row.put("encrypted_content", null);
+        row.put("text_preview", null);
+        when(jdbc.queryForMap(any(String.class), eq(id))).thenReturn(row);
+
+        assertThat(store.fetchChunk(id)).isEmpty();
     }
 
     // -----------------------------------------------------------------------
@@ -75,12 +90,10 @@ class DbContentStoreTest {
         String longText = "x".repeat(600);
         byte[] encrypted = encryptor.encrypt(longText);
 
-        when(jdbc.queryForObject(any(String.class), eq(byte[].class), eq(id)))
-                .thenReturn(encrypted);
+        when(jdbc.queryForMap(any(String.class), eq(id)))
+                .thenReturn(Map.of("encrypted_content", encrypted, "text_preview", "preview"));
 
-        String result = store.fetchChunk(id);
-
-        assertThat(result).hasSize(500);
+        assertThat(store.fetchChunk(id)).hasSize(500);
     }
 
     // -----------------------------------------------------------------------
@@ -93,12 +106,10 @@ class DbContentStoreTest {
         String exactText = "a".repeat(500);
         byte[] encrypted = encryptor.encrypt(exactText);
 
-        when(jdbc.queryForObject(any(String.class), eq(byte[].class), eq(id)))
-                .thenReturn(encrypted);
+        when(jdbc.queryForMap(any(String.class), eq(id)))
+                .thenReturn(Map.of("encrypted_content", encrypted, "text_preview", "preview"));
 
-        String result = store.fetchChunk(id);
-
-        assertThat(result).hasSize(500);
+        assertThat(store.fetchChunk(id)).hasSize(500);
     }
 
     // -----------------------------------------------------------------------
@@ -111,12 +122,10 @@ class DbContentStoreTest {
         byte[] encrypted = encryptor.encrypt("text");
         encrypted[15] ^= 0xFF; // corrupt GCM tag region
 
-        when(jdbc.queryForObject(any(String.class), eq(byte[].class), eq(id)))
-                .thenReturn(encrypted);
+        when(jdbc.queryForMap(any(String.class), eq(id)))
+                .thenReturn(Map.of("encrypted_content", encrypted, "text_preview", "preview"));
 
-        String result = store.fetchChunk(id);
-
-        assertThat(result).isEmpty();
+        assertThat(store.fetchChunk(id)).isEmpty();
     }
 
     // -----------------------------------------------------------------------
@@ -126,11 +135,9 @@ class DbContentStoreTest {
     @Test
     void fetchChunk_jdbcException_returnsEmpty() {
         UUID id = UUID.randomUUID();
-        when(jdbc.queryForObject(any(String.class), eq(byte[].class), eq(id)))
+        when(jdbc.queryForMap(any(String.class), eq(id)))
                 .thenThrow(new RuntimeException("DB unavailable"));
 
-        String result = store.fetchChunk(id);
-
-        assertThat(result).isEmpty();
+        assertThat(store.fetchChunk(id)).isEmpty();
     }
 }
