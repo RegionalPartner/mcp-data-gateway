@@ -9,7 +9,7 @@ resource "ovh_cloud_project_kube" "mcp_cluster" {
   service_name = var.ovh_project_id
   name         = var.cluster_name
   region       = var.region
-  version      = "1.30"
+  version      = "1.32"
 
   private_network_configuration {
     default_vrack_gateway              = ""
