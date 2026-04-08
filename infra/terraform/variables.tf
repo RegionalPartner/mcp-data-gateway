@@ -24,9 +24,9 @@ variable "cluster_name" {
 }
 
 variable "region" {
-  description = "OVH region — GRA7 (Gravelines, France) for data residency"
+  description = "OVH region — GRA9 (Gravelines, France) for data residency"
   type        = string
-  default     = "GRA7"
+  default     = "GRA9"
 }
 
 variable "node_flavor" {
