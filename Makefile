@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: up down open status logs help _validate-image _validate-config _ingress
+.PHONY: up down open status logs help _validate-image _ingress
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TFDIR      := infra/terraform
@@ -39,10 +39,10 @@ help:
 
 # ── Main targets ──────────────────────────────────────────────────────────────
 
-up: _validate-image _validate-config _tf-apply _kubeconfig _secrets _postgresql _app _ingress _smoke
+up: _validate-image _tf-apply _kubeconfig _secrets _postgresql _app _smoke
 	@echo -e "$(G)✓ Cluster is up.$(N)"
-	@echo -e "  Public:  https://$(DOMAIN)/mcp"
 	@echo -e "  Local:   make open → http://localhost:8080/mcp"
+	@echo -e "  Public:  make _ingress  (once you have a domain set in k8s/app/ingress.yaml)"
 
 down:
 	@echo -e "$(Y)Destroying cluster — all Kubernetes data will be lost.$(N)"
@@ -66,13 +66,6 @@ logs:
 
 # ── Internal steps ────────────────────────────────────────────────────────────
 
-_validate-config:
-	@if grep -qE 'your-domain\.com|your-email@example' k8s/app/ingress.yaml k8s/app/cert-manager-issuer.yaml; then \
-	  echo "Error: placeholder values still present in ingress manifests."; \
-	  echo "  → Set your domain in k8s/app/ingress.yaml"; \
-	  echo "  → Set your email in k8s/app/cert-manager-issuer.yaml"; \
-	  exit 1; \
-	fi
 
 _validate-image:
 	@if [ -z "$(IMAGE_REPO)" ] || [ -z "$(IMAGE_TAG)" ] || [ -z "$(IMAGE)" ]; then \
@@ -133,7 +126,14 @@ _postgresql:
 	    --wait --timeout 5m
 
 _ingress:
-	@echo -e "$(G)▶ 6/6 Installing ingress + TLS...$(N)"
+	@if grep -qE 'your-domain\.com|your-email@example' k8s/app/ingress.yaml k8s/app/cert-manager-issuer.yaml; then \
+	  echo -e "$(Y)Skipping ingress — placeholders still present.$(N)"; \
+	  echo "  → Set your domain in k8s/app/ingress.yaml"; \
+	  echo "  → Set your email in k8s/app/cert-manager-issuer.yaml"; \
+	  echo "  Then run: make _ingress"; \
+	  exit 0; \
+	fi
+	@echo -e "$(G)▶ Installing ingress + TLS...$(N)"
 	@# allow-snippet-annotations required for configuration-snippet security headers (nginx-ingress v1.x+)
 	@# use-forwarded-headers passes real client IP to app (fixes rate limiter behind proxy)
 	$(H) upgrade --install ingress-nginx ingress-nginx \
@@ -150,6 +150,7 @@ _ingress:
 	  --wait --timeout 5m
 	$(K) apply -f k8s/app/cert-manager-issuer.yaml
 	$(K) apply -f k8s/app/ingress.yaml
+	@echo -e "$(G)  Ingress ready. Public: https://$(DOMAIN)/mcp$(N)"
 	@$(K) wait certificate mcp-gateway-tls -n $(NS) --for=condition=Ready --timeout=120s \
 	  && echo -e "$(G)  TLS certificate issued.$(N)" \
 	  || echo -e "$(Y)  TLS cert pending — DNS may need time. Check: kubectl describe certificate -n $(NS)$(N)"
