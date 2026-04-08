@@ -34,6 +34,9 @@ management:
 
 server:
   port: 8080
+  # SEC-013: unwrap X-Forwarded-For from RFC1918 proxies (nginx-ingress pods are 10.x.x.x)
+  # Without this, RateLimiterFilter sees the nginx pod IP for every client instead of the real IP
+  forward-headers-strategy: native
   error:
     include-message: never      # SEC-012: never expose exception messages to clients
     include-stacktrace: never
