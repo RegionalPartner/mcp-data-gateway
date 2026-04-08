@@ -139,9 +139,7 @@ _app:
 _smoke:
 	@echo -e "$(G)▶ Smoke test...$(N)"
 	@sleep 5
-	@$(K) run smoke --image=curlimages/curl:8.6.0 \
-	  --restart=Never --rm --attach \
-	  --namespace=$(NS) \
-	  -- curl -sf http://mcp-gateway/actuator/health \
+	@POD=$$($(K) get pod -n $(NS) -l app=mcp-gateway -o jsonpath='{.items[0].metadata.name}') && \
+	  $(K) exec -n $(NS) $$POD -- wget -qO- http://localhost:8080/actuator/health \
 	  && echo -e "$(G)✓ Health check passed$(N)" \
 	  || echo -e "$(Y)⚠ Health check failed — check: make logs$(N)"
