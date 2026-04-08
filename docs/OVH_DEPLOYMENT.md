@@ -441,6 +441,23 @@ kubectl apply -f k8s/app/deployment.yaml
 kubectl apply -f k8s/app/ingress.yaml
 ```
 
+The checked-in deployment manifest uses the default GHCR image:
+
+```yaml
+image: ghcr.io/ancoris/mcp-data-gateway:develop
+```
+
+If you are deploying from a fork or another registry, update the image before rollout:
+
+```bash
+kubectl set image deployment/mcp-gateway \
+  mcp-gateway=ghcr.io/<owner>/mcp-data-gateway:develop \
+  -n mcp-demo
+```
+
+The repo Makefile automates this with `IMAGE_REPO`, `IMAGE_TAG`, and `IMAGE`.
+`make up` fails early if the image cannot be determined, instead of timing out during rollout.
+
 ### 7.3 Watch the deployment roll out
 
 ```bash
@@ -607,16 +624,16 @@ kubectl port-forward svc/mcp-gateway 8080:80 -n mcp-demo
 ## Part 9 — Pushing a new image (CI/CD flow)
 
 The GitHub Actions CI pipeline in `.github/workflows/` builds and pushes the Docker image
-to `ghcr.io` on every push to `main`. The Kubernetes deployment uses:
+to `ghcr.io` on every push to `develop` and `main`. The default Kubernetes deployment uses:
 
 ```yaml
-image: ghcr.io/ancoris/mcp-data-gateway:latest
+image: ghcr.io/ancoris/mcp-data-gateway:develop
 ```
 
 To trigger a new deployment after a code push:
 
 ```bash
-# Option A: rolling restart (pulls the new :latest image)
+# Option A: rolling restart (pulls the current :develop image)
 kubectl rollout restart deployment/mcp-gateway -n mcp-demo
 
 # Option B: use a versioned image tag (recommended for production)
@@ -656,8 +673,9 @@ terraform destroy
 kubectl describe pod -n mcp-demo -l app=mcp-gateway
 ```
 
-Look for `Failed to pull image`. The image `ghcr.io/ancoris/mcp-data-gateway:latest`
-is in a private registry. You need to create an image pull secret:
+Look for `Failed to pull image`. The image `ghcr.io/ancoris/mcp-data-gateway:develop`
+may be missing, private, or inaccessible from the cluster. If the package is private,
+create an image pull secret:
 
 ```bash
 kubectl create secret docker-registry ghcr-secret \

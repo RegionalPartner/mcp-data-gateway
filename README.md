@@ -147,20 +147,27 @@ Infrastructure is managed with Terraform (OVH provider). A Makefile wraps the fu
 # Copy and fill in credentials
 cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
 
-# Provision cluster + deploy everything (~20 min first run)
+# Deploy the current default GHCR image (~20 min first run)
 source ~/.ovh-terraform.env
 make up
+
+# Or override the image explicitly
+make up IMAGE_REPO=ghcr.io/<owner>/mcp-data-gateway IMAGE_TAG=develop
 
 # Stop cluster and billing (~5 min, secrets preserved in .deploy.env)
 make down
 ```
+
+`make up` now validates the app image before provisioning. By default it tries to derive
+`IMAGE_REPO` from the git `origin` remote and uses `IMAGE_TAG=develop`.
+If auto-detection fails, set `IMAGE_REPO` explicitly as shown above.
 
 Secrets are auto-generated on first `make up` and saved to `.deploy.env` (gitignored).
 **Keep `.deploy.env` safe — loss of `MCP_CONTENT_KEY` makes encrypted documents unrecoverable.**
 
 Before running `make up`, set your domain in `k8s/app/ingress.yaml` and email in
 `k8s/app/cert-manager-issuer.yaml` for TLS (Let's Encrypt). See `docs/OVH_DEPLOYMENT.md`
-for the full walkthrough.
+for the full walkthrough, including the GHCR image expectation.
 
 ---
 

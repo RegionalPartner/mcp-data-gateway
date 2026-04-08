@@ -31,7 +31,7 @@ spec:
           emptyDir: {}
       containers:
         - name: mcp-gateway
-          image: YOUR_REGISTRY/mcp-data-gateway:latest  # replace with your image registry
+          image: ghcr.io/ancoris/mcp-data-gateway:develop
           ports:
             - containerPort: 8080
           env:
