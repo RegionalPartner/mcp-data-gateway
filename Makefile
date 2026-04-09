@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: up down open status logs help _validate-image _ingress
+.PHONY: up down open status logs help _validate-image _ingress _ingress-ip
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TFDIR      := infra/terraform
@@ -139,7 +139,6 @@ _ingress:
 	$(H) upgrade --install ingress-nginx ingress-nginx \
 	  --repo https://kubernetes.github.io/ingress-nginx \
 	  --namespace ingress-nginx --create-namespace \
-	  --set controller.config.allow-snippet-annotations=true \
 	  --set controller.config.use-forwarded-headers=true \
 	  --set controller.config.compute-full-forwarded-for=true \
 	  --wait --timeout 5m
@@ -154,6 +153,24 @@ _ingress:
 	@$(K) wait certificate mcp-gateway-tls -n $(NS) --for=condition=Ready --timeout=120s \
 	  && echo -e "$(G)  TLS certificate issued.$(N)" \
 	  || echo -e "$(Y)  TLS cert pending — DNS may need time. Check: kubectl describe certificate -n $(NS)$(N)"
+
+_ingress-ip:
+	@echo -e "$(G)▶ Installing nginx-ingress (LoadBalancer)...$(N)"
+	$(H) upgrade --install ingress-nginx ingress-nginx \
+	  --repo https://kubernetes.github.io/ingress-nginx \
+	  --namespace ingress-nginx --create-namespace \
+	  --set controller.config.use-forwarded-headers=true \
+	  --set controller.config.compute-full-forwarded-for=true \
+	  --wait --timeout 5m
+	@echo -e "$(G)▶ Waiting for LoadBalancer IP...$(N)"
+	@$(K) wait --namespace ingress-nginx \
+	  --for=jsonpath='{.status.loadBalancer.ingress[0].ip}' \
+	  service/ingress-nginx-controller --timeout=120s
+	@IP=$$($(K) get svc ingress-nginx-controller -n ingress-nginx \
+	  -o jsonpath='{.status.loadBalancer.ingress[0].ip}'); \
+	  echo -e "$(G)  LoadBalancer IP: $$IP$(N)"; \
+	  echo -e "  → nip.io domain:  mcp.$$IP.nip.io"; \
+	  echo -e "  → Next: edit k8s/app/ingress.yaml + cert-manager-issuer.yaml, then: make _ingress"
 
 _app:
 	@echo -e "$(G)▶ 5/6 Deploying gateway...$(N)"

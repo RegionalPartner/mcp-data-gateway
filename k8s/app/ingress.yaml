@@ -4,29 +4,21 @@ metadata:
   name: mcp-gateway
   namespace: mcp-demo
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-staging
     # SEC-004: force all HTTP traffic to HTTPS
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    # SEC-005/006: security response headers
-    # Requires allow-snippet-annotations: "true" in the nginx-ingress ConfigMap
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-      add_header X-Content-Type-Options "nosniff" always;
-      add_header X-Frame-Options "DENY" always;
-      add_header Referrer-Policy "no-referrer" always;
-      add_header Content-Security-Policy "default-src 'none'" always;
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - mcp.your-domain.com
+        - mcp.37.59.24.118.nip.io
       secretName: mcp-gateway-tls
   rules:
-    - host: mcp.your-domain.com
+    - host: mcp.37.59.24.118.nip.io
       http:
         paths:
           - path: /
