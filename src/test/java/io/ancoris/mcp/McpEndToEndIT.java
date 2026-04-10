@@ -75,6 +75,7 @@ class McpEndToEndIT extends AbstractIntegrationTest {
     private String sessionId;
 
     private UUID semanticChunkId;
+    private UUID confidentialSemanticChunkId;
 
     // -----------------------------------------------------------------------
     // Setup: encrypted DB fixtures + MCP session handshake
@@ -95,6 +96,9 @@ class McpEndToEndIT extends AbstractIntegrationTest {
     void tearDownAll() {
         if (semanticChunkId != null) {
             jdbc.update("DELETE FROM document_chunks WHERE id = ?", semanticChunkId);
+        }
+        if (confidentialSemanticChunkId != null) {
+            jdbc.update("DELETE FROM document_chunks WHERE id = ?", confidentialSemanticChunkId);
         }
     }
 
@@ -127,6 +131,15 @@ class McpEndToEndIT extends AbstractIntegrationTest {
                 VALUES (?, 'e2e-semantic-test-doc', 'PUBLIC', 0,
                         'e2e semantic search public content', ?::vector)
                 """, semanticChunkId, sb.toString());
+
+        // CONFIDENTIAL chunk — needed by semanticSearch_asAdmin_confidentialChunkVisible()
+        confidentialSemanticChunkId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO document_chunks
+                    (id, doc_name, classification, chunk_index, text_preview, embedding)
+                VALUES (?, 'e2e-confidential-semantic-doc', 'CONFIDENTIAL', 0,
+                        'e2e confidential semantic unique marker text', ?::vector)
+                """, confidentialSemanticChunkId, sb.toString());
     }
 
     private void encryptAndStore(String minioKeyFragment, String text) {
@@ -332,6 +345,64 @@ class McpEndToEndIT extends AbstractIntegrationTest {
 
         assertThat(body).doesNotContain("at io.ancoris");
         assertThat(body).doesNotContain("Exception");
+    }
+
+    // -----------------------------------------------------------------------
+    // Semantic search: 501-char query must produce an error response, not
+    // an unhandled HTTP 500 or a silent success. The MCP framework wraps
+    // IllegalArgumentException into a JSON-RPC error object (HTTP 200 body).
+    // -----------------------------------------------------------------------
+
+    @Test
+    void semanticSearch_queryTooLong_returnsErrorNotHttp500() {
+        String tooLong = "q".repeat(501);
+        ResponseEntity<String> resp = call(READ_ONLY_KEY,
+                toolCall("semantic_search_documents",
+                        "{\"query\":\"" + tooLong + "\",\"maxResults\":5}"));
+
+        assertThat(resp.getStatusCode().value())
+                .as("oversized query must not produce HTTP 500")
+                .isNotEqualTo(500);
+        assertThat(resp.getBody())
+                .as("error response must not leak stack traces")
+                .doesNotContain("Exception")
+                .doesNotContain("at io.ancoris");
+    }
+
+    // -----------------------------------------------------------------------
+    // Semantic search: ADMIN must see CONFIDENTIAL chunks in results.
+    // Only READ_ONLY was tested in the existing E2E test.
+    // -----------------------------------------------------------------------
+
+    @Test
+    void semanticSearch_asAdmin_confidentialChunkVisible() {
+        when(embeddingModel.embed(anyString())).thenReturn(SEMANTIC_VECTOR);
+
+        String body = call(ADMIN_KEY,
+                toolCall("semantic_search_documents",
+                        "{\"query\":\"confidential semantic test\",\"maxResults\":10}"))
+                .getBody();
+
+        // text_preview is returned as-is (no encrypted_content set for test fixtures)
+        assertThat(body).contains("e2e confidential semantic unique marker text");
+    }
+
+    // -----------------------------------------------------------------------
+    // Semantic search: SEC-017 trust boundary markers must appear in the raw
+    // SSE response that reaches the LLM. Verifies the E2E transport does not
+    // strip or modify the DataFragment.fragmentText content.
+    // -----------------------------------------------------------------------
+
+    @Test
+    void semanticSearch_trustBoundaryMarkersPresent() {
+        when(embeddingModel.embed(anyString())).thenReturn(SEMANTIC_VECTOR);
+
+        String body = call(READ_ONLY_KEY,
+                toolCall("semantic_search_documents",
+                        "{\"query\":\"semantic search\",\"maxResults\":10}"))
+                .getBody();
+
+        assertThat(body).contains("[EXTERNAL_CONTENT_START]");
     }
 
     // -----------------------------------------------------------------------
