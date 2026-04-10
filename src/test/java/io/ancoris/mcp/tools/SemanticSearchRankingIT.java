@@ -102,9 +102,9 @@ class SemanticSearchRankingIT extends AbstractIntegrationTest {
 
     @Test
     void rankingByCosineSimilarity_closestVectorFirst() {
-        UUID closeId      = insertPublicChunk("close-chunk",      "closest chunk content",      CLOSE_VECTOR);
-        UUID orthogonalId = insertPublicChunk("orthogonal-chunk", "orthogonal chunk content",   ORTHOGONAL_VECTOR);
-        UUID oppositeId   = insertPublicChunk("opposite-chunk",   "farthest opposite chunk",    OPPOSITE_VECTOR);
+        UUID closeId    = insertPublicChunk("close-chunk",      "closest chunk content",    CLOSE_VECTOR);
+        insertPublicChunk("orthogonal-chunk", "orthogonal chunk content", ORTHOGONAL_VECTOR);
+        UUID oppositeId = insertPublicChunk("opposite-chunk",   "farthest opposite chunk",  OPPOSITE_VECTOR);
 
         // Query vector = CLOSE vector → CLOSE chunk has distance 0, OPPOSITE has distance 2
         when(embeddingModel.embed(anyString())).thenReturn(CLOSE_VECTOR);

@@ -476,7 +476,10 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
                     client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
 
             return response.statusCode() == 200 && response.body().contains("UP");
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (java.security.GeneralSecurityException | java.io.IOException e) {
             return false;
         }
     }

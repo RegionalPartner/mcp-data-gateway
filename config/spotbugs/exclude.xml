@@ -93,4 +93,12 @@
         <Class name="~.*\$\$.*"/>
     </Match>
 
+    <!-- McpRemoteEndToEndIT uses a trust-all X509TrustManager to accept the LE staging
+         certificate on the OVH test cluster. This is intentional, test-only code, not
+         production trust configuration. -->
+    <Match>
+        <Class name="io.ancoris.mcp.McpRemoteEndToEndIT$1"/>
+        <Bug pattern="WEAK_TRUST_MANAGER"/>
+    </Match>
+
 </FindBugsFilter>
