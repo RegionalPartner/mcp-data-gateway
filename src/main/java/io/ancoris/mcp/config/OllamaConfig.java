@@ -13,10 +13,9 @@ import org.springframework.context.annotation.Configuration;
  * Manual configuration for the Ollama embedding model.
  *
  * We use spring-ai-ollama (core) instead of spring-ai-starter-model-ollama (starter)
- * to avoid spring-ai-retry-autoconfigure, which requires
- * org.springframework.core.retry.RetryListener from Spring Framework 7.
- * Spring Boot 3.5 ships Spring Framework 6.x, so the starter's auto-configuration
- * would fail at startup.  Configuring the bean manually bypasses the retry module.
+ * to avoid spring-ai-retry-autoconfigure auto-wiring.  Configuring the bean manually
+ * gives us full control over the OllamaApi lifecycle without relying on Spring Boot
+ * auto-configuration, which varies significantly across spring-ai releases.
  *
  * RAG-001: nomic-embed-text produces 768-dim vectors stored in document_chunks.embedding.
  */

@@ -5,3 +5,4 @@ metadata:
   namespace: mcp-demo
 data:
   spring-profiles-active: "prod"
+  ollama-base-url: "http://ollama:11434"

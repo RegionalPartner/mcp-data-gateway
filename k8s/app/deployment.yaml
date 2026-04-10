@@ -17,6 +17,8 @@ spec:
     spec:
       serviceAccountName: mcp-gateway
       automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -31,7 +33,7 @@ spec:
           emptyDir: {}
       containers:
         - name: mcp-gateway
-          image: ghcr.io/ancoris/mcp-data-gateway:develop
+          image: ghcr.io/regionalpartner/mcp-data-gateway:develop
           ports:
             - containerPort: 8080
           env:
@@ -67,6 +69,11 @@ spec:
                   key: mcp-content-key
             - name: JAVA_TOOL_OPTIONS
               value: "-Djava.io.tmpdir=/tmp"
+            - name: OLLAMA_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: mcp-gateway-config
+                  key: ollama-base-url
           readinessProbe:
             httpGet:
               path: /actuator/health
