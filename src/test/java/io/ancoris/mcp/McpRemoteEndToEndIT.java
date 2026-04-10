@@ -417,7 +417,9 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
     private void insertSemanticChunks() {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < SEMANTIC_VECTOR.length; i++) {
-            if (i > 0) sb.append(',');
+            if (i > 0) {
+                sb.append(',');
+            }
             sb.append(SEMANTIC_VECTOR[i]);
         }
         sb.append(']');
