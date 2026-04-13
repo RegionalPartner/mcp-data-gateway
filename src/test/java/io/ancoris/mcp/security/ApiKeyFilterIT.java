@@ -1,20 +1,31 @@
 package io.ancoris.mcp.security;
 
 import io.ancoris.mcp.integration.AbstractIntegrationTest;
+import io.ancoris.mcp.model.AccessRole;
+import io.ancoris.mcp.oauth.JwtTokenService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @AutoConfigureMockMvc
 class ApiKeyFilterIT extends AbstractIntegrationTest {
 
     @Autowired
     MockMvc mockMvc;
+
+    @Autowired
+    JwtTokenService jwtTokenService;
+
+    @Autowired
+    ApiKeyService apiKeyService;
 
     private static final String MCP_TOOLS_LIST = """
             {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
@@ -58,6 +69,49 @@ class ApiKeyFilterIT extends AbstractIntegrationTest {
     @Test
     void actuatorHealthEndpoint_bypassesFilter() throws Exception {
         mockMvc.perform(get("/actuator/health"))
+               .andExpect(status().isOk());
+    }
+
+    // -------------------------------------------------------------------------
+    // OAuth 2.0 Bearer JWT auth
+    // -------------------------------------------------------------------------
+
+    @Test
+    void missingCredentials_401HasWwwAuthenticateHeader() throws Exception {
+        mockMvc.perform(post("/mcp/message")
+                       .contentType(MediaType.APPLICATION_JSON)
+                       .content(MCP_TOOLS_LIST))
+               .andExpect(status().isUnauthorized())
+               .andExpect(header().string("WWW-Authenticate",
+                       containsString("resource_metadata=")));
+    }
+
+    @Test
+    void validBearerJwt_adminKey_actuatorInfoReturns200() throws Exception {
+        // The demo-admin-key-001 hash is seeded via Flyway V4 in test DB.
+        // Look up the actual hash via ApiKeyService, then issue a JWT for it.
+        var found = apiKeyService.authenticate("demo-admin-key-001");
+        org.assertj.core.api.Assertions.assertThat(found).isPresent();
+
+        String jwt = jwtTokenService.issue(found.get().getKeyHash(), AccessRole.ADMIN);
+
+        mockMvc.perform(get("/actuator/info")
+                       .header("Authorization", "Bearer " + jwt))
+               .andExpect(status().isOk());
+    }
+
+    @Test
+    void invalidBearerJwt_returns401() throws Exception {
+        mockMvc.perform(post("/mcp/message")
+                       .header("Authorization", "Bearer this.is.not.valid")
+                       .contentType(MediaType.APPLICATION_JSON)
+                       .content(MCP_TOOLS_LIST))
+               .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void oauthMetadataEndpoint_noAuthRequired() throws Exception {
+        mockMvc.perform(get("/.well-known/oauth-authorization-server"))
                .andExpect(status().isOk());
     }
 }

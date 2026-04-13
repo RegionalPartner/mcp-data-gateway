@@ -34,6 +34,10 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/error").permitAll()
+                        // OAuth 2.0 endpoints — ApiKeyFilter skips these; auth is the OAuth flow itself
+                        .requestMatchers("/.well-known/oauth-authorization-server",
+                                "/.well-known/oauth-protected-resource",
+                                "/oauth/authorize", "/oauth/token").permitAll()
                         .requestMatchers("/actuator/**").hasRole("ADMIN")  // SEC-015
                         .anyRequest().authenticated()
                 )

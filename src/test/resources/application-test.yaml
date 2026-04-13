@@ -12,6 +12,9 @@ mcp:
     pepper: test-pepper-32-chars-minimum-000
   content:
     key: "0101010101010101010101010101010101010101010101010101010101010101"
+  oauth:
+    issuer: http://localhost
+    jwt-secret: test-jwt-secret-32-chars-minimum-00
 
 logging:
   level:

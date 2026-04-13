@@ -4,6 +4,8 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.ancoris.mcp.model.ApiKey;
 import org.springframework.stereotype.Service;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -36,6 +38,23 @@ public class ApiKeyService {
                 .filter(key -> !key.isRevoked())
                 .filter(key -> key.getExpiresAt() == null || key.getExpiresAt().isAfter(Instant.now()))
                 .filter(key -> hasher.matches(rawKey, key.getKeyHash()))
+                .findFirst();
+    }
+
+    /**
+     * Resolves a stored HMAC key hash (from a Bearer JWT claim) back to an active ApiKey.
+     * Used by ApiKeyFilter when authenticating via OAuth 2.0 Bearer tokens.
+     */
+    public Optional<ApiKey> authenticateByHash(String keyHash) {
+        List<ApiKey> keys = keyCache.get("all", k -> repository.findAll());
+        return keys.stream()
+                // SEC-001: reject revoked or expired keys
+                .filter(key -> !key.isRevoked())
+                .filter(key -> key.getExpiresAt() == null || key.getExpiresAt().isAfter(Instant.now()))
+                // Constant-time comparison to avoid hash oracle timing attacks (SEC-HMAC)
+                .filter(key -> MessageDigest.isEqual(
+                        keyHash.getBytes(StandardCharsets.UTF_8),
+                        key.getKeyHash().getBytes(StandardCharsets.UTF_8)))
                 .findFirst();
     }
 

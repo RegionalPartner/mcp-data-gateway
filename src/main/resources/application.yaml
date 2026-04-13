@@ -54,6 +54,9 @@ mcp:
     pepper: ${MCP_HMAC_PEPPER}
   content:
     key: ${MCP_CONTENT_KEY}
+  oauth:
+    issuer: ${MCP_OAUTH_ISSUER:https://mcp.37.59.24.118.nip.io}
+    jwt-secret: ${MCP_JWT_SECRET}
 
 logging:
   level:
