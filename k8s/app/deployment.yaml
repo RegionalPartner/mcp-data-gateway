@@ -34,6 +34,7 @@ spec:
       containers:
         - name: mcp-gateway
           image: ghcr.io/regionalpartner/mcp-data-gateway:develop
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           env:

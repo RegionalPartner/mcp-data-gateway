@@ -6,6 +6,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -33,7 +34,11 @@ public class EmbeddingInitializer implements ApplicationListener<ApplicationRead
     }
 
     @Override
+    @Transactional
     public void onApplicationEvent(ApplicationReadyEvent event) {
+        // Bypass RLS so all rows (including CONFIDENTIAL) are visible for backfill.
+        // SET LOCAL scopes the role to this transaction only.
+        jdbc.execute("SET LOCAL app.mcp_role = 'ADMIN'");
         List<Map<String, Object>> pending = jdbc.queryForList(
                 "SELECT id, text_preview FROM document_chunks WHERE embedding IS NULL");
 
