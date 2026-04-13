@@ -199,12 +199,12 @@ class SemanticSearchToolIT extends AbstractIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
-    // V7 migration: HNSW index was created
+    // V8 migration: HNSW index was dropped (AVX-512 incompatible with OVH nodes)
     // -----------------------------------------------------------------------
 
     @Test
     @Transactional
-    void v7Migration_hnswIndexExists() {
+    void v8Migration_hnswIndexDropped() {
         Integer idxCount = jdbc.queryForObject(
                 """
                 SELECT count(*) FROM pg_indexes
@@ -213,7 +213,7 @@ class SemanticSearchToolIT extends AbstractIntegrationTest {
                 """,
                 Integer.class);
 
-        assertThat(idxCount).isEqualTo(1);
+        assertThat(idxCount).isEqualTo(0);
     }
 
     // -----------------------------------------------------------------------
