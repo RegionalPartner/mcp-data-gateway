@@ -43,7 +43,12 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
+        // Accept key from header (primary) or query parameter (fallback for clients
+        // that cannot reliably forward custom headers on every request, e.g. Claude Code).
         String rawKey = request.getHeader(API_KEY_HEADER);
+        if (rawKey == null || rawKey.isBlank()) {
+            rawKey = request.getParameter("apiKey");
+        }
         if (rawKey == null || rawKey.isBlank()) {
             recordFailure(request, "missing_key");
             sendUnauthorized(response, "Missing X-API-Key header");
