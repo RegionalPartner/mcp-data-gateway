@@ -37,7 +37,7 @@ public class SecurityConfig {
                         // OAuth 2.0 endpoints — ApiKeyFilter skips these; auth is the OAuth flow itself
                         .requestMatchers("/.well-known/oauth-authorization-server",
                                 "/.well-known/oauth-protected-resource",
-                                "/oauth/authorize", "/oauth/token").permitAll()
+                                "/oauth/authorize", "/oauth/token", "/oauth/register").permitAll()
                         .requestMatchers("/actuator/**").hasRole("ADMIN")  // SEC-015
                         .anyRequest().authenticated()
                 )

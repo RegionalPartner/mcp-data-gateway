@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
@@ -16,11 +17,13 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * OAuth 2.0 Authorization Server endpoints for the MCP Data Gateway.
@@ -60,11 +63,31 @@ public class OAuthController {
         meta.put("issuer", issuer);
         meta.put("authorization_endpoint", issuer + "/oauth/authorize");
         meta.put("token_endpoint", issuer + "/oauth/token");
+        meta.put("registration_endpoint", issuer + "/oauth/register");
         meta.put("response_types_supported", List.of("code"));
         meta.put("grant_types_supported", List.of("authorization_code"));
         meta.put("code_challenge_methods_supported", List.of("S256"));
         meta.put("token_endpoint_auth_methods_supported", List.of("none"));
         return meta;
+    }
+
+    /**
+     * RFC 7591: Dynamic Client Registration — required by the MCP TypeScript SDK.
+     * We accept any registration and return a client_id; no state is persisted because
+     * all clients are treated as public (no client secret, PKCE required).
+     */
+    @PostMapping(path = "/oauth/register", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> register(@RequestBody Map<String, Object> request) {
+        String clientId = UUID.randomUUID().toString();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("client_id", clientId);
+        response.put("client_id_issued_at", Instant.now().getEpochSecond());
+        response.put("redirect_uris", request.getOrDefault("redirect_uris", List.of()));
+        response.put("grant_types", List.of("authorization_code"));
+        response.put("response_types", List.of("code"));
+        response.put("token_endpoint_auth_method", "none");
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     /** RFC 9728: Protected Resource Metadata — referenced by WWW-Authenticate on 401 responses. */
