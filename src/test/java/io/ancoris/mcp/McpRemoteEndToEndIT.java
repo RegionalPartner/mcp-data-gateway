@@ -2,6 +2,7 @@ package io.ancoris.mcp;
 
 import io.ancoris.mcp.connector.ContentEncryptor;
 import io.ancoris.mcp.integration.AbstractIntegrationTest;
+import io.ancoris.mcp.security.RateLimiterFilter;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
@@ -100,6 +101,9 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    @Autowired
+    private RateLimiterFilter rateLimiterFilter;
+
     /**
      * No persistent sessions.
      *
@@ -125,6 +129,13 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
 
     @BeforeAll
     void setUpAll() throws SSLException {
+        // McpEndToEndIT and McpRemoteEndToEndIT share one Spring context. The
+        // per-IP sliding window accumulates across both classes. Reset it here
+        // so this class starts with a clean slate (the @TestPropertySource limit
+        // of 300 is intended but @Value field injection silently falls back to
+        // the default of 60 in the shared IT context).
+        rateLimiterFilter.clearRequestLog();
+
         targetingOvh = isOvhHealthy();
 
         if (targetingOvh) {

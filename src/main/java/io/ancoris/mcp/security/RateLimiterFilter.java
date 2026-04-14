@@ -81,4 +81,9 @@ public class RateLimiterFilter extends OncePerRequestFilter {
         // Kubernetes liveness/readiness probes must never be throttled
         return request.getRequestURI().startsWith("/actuator/health");
     }
+
+    /** Resets all per-IP counters. Called by test setup to prevent cross-class pollution. */
+    public void clearRequestLog() {
+        requestLog.invalidateAll();
+    }
 }
