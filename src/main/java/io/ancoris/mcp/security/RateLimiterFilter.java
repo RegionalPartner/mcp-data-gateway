@@ -8,6 +8,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.security.SecurityProperties;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
@@ -22,25 +23,24 @@ import java.util.concurrent.TimeUnit;
  * Runs at order DEFAULT_FILTER_ORDER-1 (just before Spring Security) so it applies
  * to all requests including unauthenticated probes.
  *
- * Limit: {@code mcp.security.rate-limit.max-requests} requests per
- * {@code mcp.security.rate-limit.window-millis} milliseconds per remote IP (defaults: 60 / 60 000).
- * Exceeding the limit returns HTTP 429 and increments mcp.rate.limit.exceeded counter.
+ * Limit: {@code mcp.security.rate-limit.max-requests} requests per 60-second window per IP
+ * (default 60; override in {@code application-test.yaml} for tests to prevent cross-class
+ * context pollution). Exceeding the limit returns HTTP 429.
  */
 @Component
 @Order(SecurityProperties.DEFAULT_FILTER_ORDER - 1)
 public class RateLimiterFilter extends OncePerRequestFilter {
 
-    private final int maxRequestsPerWindow;
+    /** Overridable via {@code mcp.security.rate-limit.max-requests}. */
+    @Value("${mcp.security.rate-limit.max-requests:60}")
+    int maxRequestsPerWindow;
+
     private static final long WINDOW_MILLIS = 60_000L;
 
     private final Cache<String, ArrayDeque<Long>> requestLog;
     private final Counter rateLimitCounter;
 
-    public RateLimiterFilter(
-            @org.springframework.beans.factory.annotation.Value(
-                    "${mcp.security.rate-limit.max-requests:60}") int maxRequestsPerWindow,
-            MeterRegistry meterRegistry) {
-        this.maxRequestsPerWindow = maxRequestsPerWindow;
+    public RateLimiterFilter(MeterRegistry meterRegistry) {
         // SEC-014: Caffeine cache auto-evicts inactive IPs, bounding memory usage
         this.requestLog = Caffeine.newBuilder()
                 .expireAfterAccess(2, TimeUnit.MINUTES)

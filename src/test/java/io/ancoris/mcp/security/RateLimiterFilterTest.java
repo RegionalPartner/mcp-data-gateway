@@ -17,7 +17,8 @@ class RateLimiterFilterTest {
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        filter = new RateLimiterFilter(60, meterRegistry);
+        filter = new RateLimiterFilter(meterRegistry);
+        filter.maxRequestsPerWindow = 60;  // field is package-private; mirrors production default
     }
 
     // -----------------------------------------------------------------------
