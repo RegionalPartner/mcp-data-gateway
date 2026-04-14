@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -48,6 +49,7 @@ import static org.mockito.Mockito.when;
  * closes the stream prematurely). Reactor Netty handles chunked SSE correctly.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@TestPropertySource(properties = "mcp.security.rate-limit.max-requests=300")
 class McpEndToEndIT extends AbstractIntegrationTest {
 
     // Must match McpServerStreamableHttpProperties default (spring.ai.mcp.server.protocol: STREAMABLE)

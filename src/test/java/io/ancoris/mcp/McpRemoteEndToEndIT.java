@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.netty.http.client.HttpClient;
@@ -66,6 +67,7 @@ import static org.mockito.Mockito.when;
  * up — when running against the local server.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@TestPropertySource(properties = "mcp.security.rate-limit.max-requests=300")
 class McpRemoteEndToEndIT extends AbstractIntegrationTest {
 
     private static final Logger log = LoggerFactory.getLogger(McpRemoteEndToEndIT.class);
