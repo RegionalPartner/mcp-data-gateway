@@ -22,20 +22,25 @@ import java.util.concurrent.TimeUnit;
  * Runs at order DEFAULT_FILTER_ORDER-1 (just before Spring Security) so it applies
  * to all requests including unauthenticated probes.
  *
- * Limit: 60 requests per 60-second window per remote IP.
+ * Limit: {@code mcp.security.rate-limit.max-requests} requests per
+ * {@code mcp.security.rate-limit.window-millis} milliseconds per remote IP (defaults: 60 / 60 000).
  * Exceeding the limit returns HTTP 429 and increments mcp.rate.limit.exceeded counter.
  */
 @Component
 @Order(SecurityProperties.DEFAULT_FILTER_ORDER - 1)
 public class RateLimiterFilter extends OncePerRequestFilter {
 
-    private static final int MAX_REQUESTS_PER_WINDOW = 60;
+    private final int maxRequestsPerWindow;
     private static final long WINDOW_MILLIS = 60_000L;
 
     private final Cache<String, ArrayDeque<Long>> requestLog;
     private final Counter rateLimitCounter;
 
-    public RateLimiterFilter(MeterRegistry meterRegistry) {
+    public RateLimiterFilter(
+            @org.springframework.beans.factory.annotation.Value(
+                    "${mcp.security.rate-limit.max-requests:60}") int maxRequestsPerWindow,
+            MeterRegistry meterRegistry) {
+        this.maxRequestsPerWindow = maxRequestsPerWindow;
         // SEC-014: Caffeine cache auto-evicts inactive IPs, bounding memory usage
         this.requestLog = Caffeine.newBuilder()
                 .expireAfterAccess(2, TimeUnit.MINUTES)
@@ -59,7 +64,7 @@ public class RateLimiterFilter extends OncePerRequestFilter {
             while (!times.isEmpty() && times.peekFirst() < cutoff) {
                 times.pollFirst();
             }
-            if (times.size() >= MAX_REQUESTS_PER_WINDOW) {
+            if (times.size() >= maxRequestsPerWindow) {
                 rateLimitCounter.increment();
                 response.setStatus(429);
                 response.setContentType(MediaType.APPLICATION_JSON_VALUE);

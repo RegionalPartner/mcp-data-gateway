@@ -17,7 +17,7 @@ class RateLimiterFilterTest {
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        filter = new RateLimiterFilter(meterRegistry);
+        filter = new RateLimiterFilter(60, meterRegistry);
     }
 
     // -----------------------------------------------------------------------
