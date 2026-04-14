@@ -1,7 +1,11 @@
 package io.ancoris.mcp.oauth;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.ancoris.mcp.model.ApiKey;
 import io.ancoris.mcp.security.ApiKeyService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -24,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 /**
  * OAuth 2.0 Authorization Server endpoints for the MCP Data Gateway.
@@ -38,6 +43,25 @@ import java.util.UUID;
  */
 @Controller
 public class OAuthController {
+
+    private static final Logger log = LoggerFactory.getLogger(OAuthController.class);
+
+    /**
+     * Short-lived cache of pending authorize params keyed by full client_id.
+     *
+     * Firefox (Linux) consistently sends a second GET /oauth/authorize request
+     * 1-2 seconds after the form loads, but with the URL truncated mid client_id
+     * (e.g. "d76f7121-1be0-" instead of the full UUID). This cache lets the
+     * handler recover the original params and re-render the form so the user
+     * can still enter their API key.
+     */
+    private final Cache<String, AuthorizeParams> pendingForms = Caffeine.newBuilder()
+            .expireAfterWrite(5, TimeUnit.MINUTES)
+            .maximumSize(50)
+            .build();
+
+    private record AuthorizeParams(String responseType, String clientId, String redirectUri,
+                                    String codeChallenge, String codeChallengeMethod, String state) { }
 
     private final String issuer;
     private final ApiKeyService apiKeyService;
@@ -109,20 +133,44 @@ public class OAuthController {
             @RequestParam(value = "code_challenge", required = false) String codeChallenge,
             @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
             @RequestParam(value = "state", required = false, defaultValue = "") String state) {
-        if (redirectUri == null || redirectUri.isBlank()
-                || codeChallenge == null || codeChallenge.isBlank()
-                || clientId == null || clientId.isBlank()) {
-            return ResponseEntity.badRequest()
-                    .contentType(MediaType.TEXT_HTML)
-                    .body(buildSessionExpiredPage());
+
+        // Happy path: all required params present
+        if (present(clientId) && present(redirectUri) && present(codeChallenge) && present(codeChallengeMethod)) {
+            if (!"code".equals(responseType) || !"S256".equals(codeChallengeMethod)) {
+                return ResponseEntity.badRequest()
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .body("unsupported_response_type or code_challenge_method");
+            }
+            // Cache params so a subsequent truncated-URL request can recover the form
+            pendingForms.put(clientId, new AuthorizeParams(
+                    responseType, clientId, redirectUri, codeChallenge, codeChallengeMethod, state));
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
+                    .body(buildAuthorizeForm(clientId, redirectUri, codeChallenge, codeChallengeMethod, state));
         }
-        if (!"code".equals(responseType) || !"S256".equals(codeChallengeMethod)) {
-            return ResponseEntity.badRequest()
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body("unsupported_response_type or code_challenge_method");
+
+        // Recovery path: Firefox sends a truncated URL (e.g. client_id cut mid-UUID).
+        // Find any cached entry whose full client_id starts with the partial value received.
+        if (present(clientId)) {
+            AuthorizeParams cached = pendingForms.asMap().values().stream()
+                    .filter(p -> p.clientId().startsWith(clientId))
+                    .findFirst()
+                    .orElse(null);
+            if (cached != null) {
+                log.debug("OAuth form recovered for truncated client_id prefix '{}'", clientId);
+                return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
+                        .body(buildAuthorizeForm(cached.clientId(), cached.redirectUri(),
+                                cached.codeChallenge(), cached.codeChallengeMethod(), cached.state()));
+            }
         }
-        String html = buildAuthorizeForm(clientId, redirectUri, codeChallenge, codeChallengeMethod, state);
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
+
+        // No params, no cache match — session genuinely expired or direct navigation
+        return ResponseEntity.badRequest()
+                .contentType(MediaType.TEXT_HTML)
+                .body(buildSessionExpiredPage());
+    }
+
+    private static boolean present(String s) {
+        return s != null && !s.isBlank();
     }
 
     /** Validates the API key, issues a one-time code, and redirects back to the client. */

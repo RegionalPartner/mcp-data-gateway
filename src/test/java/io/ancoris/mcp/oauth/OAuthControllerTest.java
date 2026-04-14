@@ -122,6 +122,32 @@ class OAuthControllerTest {
     }
 
     @Test
+    void authorizeForm_truncatedClientId_recoversFormFromCache() {
+        // First request: full URL — caches the params
+        controller.authorizeForm("code", "abcd1234-ef56-7890-abcd-ef1234567890",
+                REDIRECT_URI, "challenge", "S256", "mystate");
+
+        // Second request: truncated client_id (Firefox behaviour)
+        var response = controller.authorizeForm(
+                "code", "abcd1234-ef56-", null, null, null, "");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.TEXT_HTML);
+        assertThat(response.getBody()).contains("name=\"api_key\"");
+        assertThat(response.getBody()).contains(REDIRECT_URI);
+    }
+
+    @Test
+    void authorizeForm_truncatedClientId_noCache_returnsExpiredPage() {
+        // Truncated request with no prior cached entry
+        var response = controller.authorizeForm(
+                "code", "abcd1234-ef56-", null, null, null, "");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("Authorization session expired");
+    }
+
+    @Test
     void authorizeForm_xssInClientId_escapedInOutput() {
         var response = controller.authorizeForm(
                 "code", "<script>alert(1)</script>", REDIRECT_URI, "challenge", "S256", "");
