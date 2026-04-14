@@ -4,13 +4,19 @@ metadata:
   name: mcp-gateway
   namespace: mcp-demo
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     # SEC-004: force all HTTP traffic to HTTPS
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # MCP session affinity: Spring AI stores the SSE emitter in JVM heap, making each
+    # MCP session physically bound to one pod. Route all requests from the same client
+    # IP to the same replica to prevent "session not found" failures across replicas.
+    # See docs/ARCHITECTURE.md § "Horizontal scaling and MCP session affinity" for
+    # the full analysis and the long-term mitigation options.
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
 spec:
   ingressClassName: nginx
   tls:

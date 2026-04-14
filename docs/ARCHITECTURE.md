@@ -18,7 +18,7 @@
 9. [Performance characteristics](#9-performance-characteristics)
 10. [Adding a new tool](#10-adding-a-new-tool)
 11. [Operational runbook](#11-operational-runbook)
-12. [Known limitations and future work](#12-known-limitations-and-future-work)
+12. [Known limitations and future work](#12-known-limitations-and-future-work) — incl. [horizontal scaling and MCP session affinity](#horizontal-scaling-and-mcp-session-affinity)
 13. [Security findings index (SEC-XXX)](#13-security-findings-index-sec-xxx)
 
 ---
@@ -505,10 +505,16 @@ advertised name in `tools/list`.
 ### Session lifecycle
 
 The MCP session is managed entirely by Spring AI. The session ID returned in the
-`Mcp-Session-Id` response header is an opaque token. There is no application-level session
-state associated with it — the gateway is fully stateless per request. The session ID is
-required by the MCP protocol but is not used for authentication or context tracking by this
-application.
+`Mcp-Session-Id` response header is an opaque token. The gateway carries no
+application-level business state per session — authentication is re-validated on every
+request from the Bearer JWT, and there is no conversation context stored server-side.
+
+However, the session is **not** transparent to infrastructure. Spring AI's
+`WebMvcStreamableServerTransportProvider` stores each session's SSE emitter (the open
+streaming response to the client) in JVM heap. That emitter is a live OS-level TCP socket
+and cannot be shared across JVM processes or serialised to a distributed store. This means
+every request belonging to a session must reach the same pod that accepted the initial
+`initialize` POST — see [§12 Horizontal scaling and MCP session affinity](#horizontal-scaling-and-mcp-session-affinity).
 
 ### `protocol: STREAMABLE` vs `transport: streamable-http`
 
@@ -749,6 +755,57 @@ change to the active partition.
 ---
 
 ## 12. Known limitations and future work
+
+### Horizontal scaling and MCP session affinity
+
+**The problem.** The MCP Streamable HTTP transport is built on HTTP, but the session is
+not stateless at the infrastructure layer. The initialize exchange produces a live SSE
+connection (an open HTTP streaming response) that Spring AI holds in JVM memory as a
+`SseEmitter`. Every subsequent request in that session — tool calls, `initialized`
+acknowledgement, `tools/list` — must reach the same pod. If a load balancer routes any
+of those requests to a different replica:
+
+- The second pod has no record of the session ID
+- Spring AI returns an error or ignores the request
+- The MCP client (e.g. Claude Code) sees the connection as failed and retries from scratch
+
+This was diagnosed in production (April 2026) when 2 replicas were deployed. Claude Code
+successfully `initialize`d on Pod A, but the follow-up SSE GET or `tools/list` request was
+round-robined to Pod B. The client showed "Status: ✘ failed" despite auth being valid.
+
+**Current mitigation.** The ingress uses NGINX `upstream-hash-by: "$remote_addr"` to
+consistently route all requests from a given client IP to the same pod:
+
+```yaml
+nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+```
+
+This is sufficient for a single-operator deployment (all Claude Code requests originate
+from one machine). It does not hold for:
+- Multiple users behind the same NAT (all hash to the same pod, defeating HA)
+- Clients that connect from changing IPs (mobile, VPN rotation)
+- Pod restarts — the hash re-maps to a different surviving pod, breaking all open sessions
+
+**Why not cookie-based affinity?** The standard NGINX `affinity: "cookie"` annotation
+works only if the client echoes the `Set-Cookie` header on subsequent requests. Claude
+Code (and most MCP API clients) are not browsers and do not handle cookies, so the first
+unauthenticated 401 sets the cookie but the authenticated retry ignores it, causing the
+session to land on a randomly selected pod.
+
+**Long-term mitigation options (not yet implemented):**
+
+| Option | Effort | Trade-offs |
+|---|---|---|
+| Scale to 1 replica | Trivial | No HA; acceptable for dev/internal |
+| Route on `Mcp-Session-Id` header | Low | Requires NGINX `upstream-hash-by: "$http_mcp_session_id"` — correct but requires the client to send the header on the first (pre-session) request too, which Claude Code does not do until after `initialize` succeeds |
+| Externalise SSE state to Redis | High | Requires Spring AI fork or custom `ServerTransportProvider`; not possible with current Spring AI 1.1.x API |
+| Per-client subdomain / port | Medium | Route `/mcp` through a dedicated `NodePort` per replica; operationally expensive |
+| Drop SSE, use polling | Medium | Pure request/response avoids the emitter problem; loses server-push notifications; not yet supported by the MCP spec as a primary transport |
+
+**Related limitations also affected by horizontal scaling:**
+- `RateLimiterFilter` uses a JVM-local Caffeine cache — per-pod, not global
+- `ApiKeyService` cache invalidation is local — key revocation takes up to 60 seconds
+  per pod independently
 
 ### Spring AI version pinned to 1.1.4
 
