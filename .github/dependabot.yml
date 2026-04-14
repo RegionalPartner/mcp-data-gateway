@@ -1,0 +1,27 @@
+version: 2
+updates:
+  # Gradle dependencies (Spring Boot, Spring AI, MCP SDK, etc.)
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    ignore:
+      # Spring AI upgrades require careful compatibility testing (see ARCHITECTURE.md §12)
+      - dependency-name: "org.springframework.ai:*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # MCP SDK version is pinned deliberately — see McpProtocolVersionConfig
+      - dependency-name: "io.modelcontextprotocol.sdk:*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
