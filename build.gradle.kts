@@ -27,6 +27,15 @@ dependencyManagement {
         mavenBom("org.springframework.ai:spring-ai-bom:1.1.4")
         mavenBom("org.testcontainers:testcontainers-bom:1.20.4")
     }
+    dependencies {
+        // MCP SDK 0.17.2 adds ProtocolVersions.MCP_2025_11_25 (required by Claude Code 2.1.x)
+        // while remaining API-compatible with mcp-annotations:0.8.0 used by Spring AI 1.1.4.
+        // (0.18.x removed McpJsonMapper.createDefault(), breaking mcp-annotations:0.8.0)
+        dependency("io.modelcontextprotocol.sdk:mcp:0.17.2")
+        dependency("io.modelcontextprotocol.sdk:mcp-core:0.17.2")
+        dependency("io.modelcontextprotocol.sdk:mcp-json-jackson2:0.17.2")
+        dependency("io.modelcontextprotocol.sdk:mcp-spring-webmvc:0.17.2")
+    }
 }
 
 // ── Separate integrationTest source set (Testcontainers, slow) ─────────────
