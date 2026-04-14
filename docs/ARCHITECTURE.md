@@ -513,9 +513,60 @@ application.
 ### `protocol: STREAMABLE` vs `transport: streamable-http`
 
 `application.yaml` uses `spring.ai.mcp.server.protocol: STREAMABLE`. Earlier Spring AI
-milestones used `transport: streamable-http`. The correct key for Spring AI 2.0.0-M2 is
+milestones used `transport: streamable-http`. The correct key for Spring AI 1.1.x is
 `protocol`, bound to `McpServerStreamableHttpProperties`. Using the old key results in the
 SSE endpoint not being registered, so all tool calls return 404.
+
+### Protocol version 2025-11-25 and `McpProtocolVersionConfig`
+
+**Background.** The MCP spec has three protocol versions: `2025-03-26`, `2025-06-18`, and
+`2025-11-25`. Claude Code ≥ 2.1.104 requires `2025-11-25` and disconnects if the server
+responds with an older version.
+
+**Root cause.** Spring AI 1.1.4 bundles MCP SDK 0.17.0.
+`WebMvcStreamableServerTransportProvider.protocolVersions()` is hardcoded to return
+`["2024-11-05", "2025-03-26", "2025-06-18"]`. The server's `initialize` handler reads this
+list from the transport on construction and rejects any version not in it.
+
+**Why not upgrade to Spring AI 2.x?** Spring AI 2.0.0-M4 uses Jackson 3.x (`tools.jackson`)
+and targets Spring Boot 4.x. Our stack (Spring Boot 3.5.0) uses Jackson 2.x — the two
+major versions conflict at runtime with `NoSuchFieldError` in `DeserializerCache`.
+
+**Why not MCP SDK 0.18.x directly?** SDK 0.18.x removed `McpJsonMapper.createDefault()`,
+which is called by `org.springaicommunity:mcp-annotations:0.8.0` (a Spring AI 1.1.4 transitive
+dependency). Upgrading to 0.18.x produces `NoSuchMethodError` at startup.
+
+**Solution — two steps:**
+
+1. **`build.gradle.kts`** pins all `io.modelcontextprotocol.sdk` artefacts to `0.17.2` via
+   `dependencyManagement`. SDK 0.17.2 adds the `MCP_2025_11_25` constant to `ProtocolVersions`
+   and keeps `McpJsonMapper.createDefault()`, preserving binary compatibility with
+   `mcp-annotations:0.8.0`.
+
+2. **`McpProtocolVersionConfig`** is a `BeanPostProcessor` that runs after Spring creates the
+   `McpSyncServer` bean. It reflectively appends `"2025-11-25"` to the
+   `McpAsyncServer.protocolVersions` field (which is `private` but not `final`):
+
+   ```java
+   Field versionsField = McpAsyncServer.class.getDeclaredField("protocolVersions");
+   versionsField.setAccessible(true);
+   List<String> extended = new ArrayList<>((List<String>) versionsField.get(asyncServer));
+   extended.add("2025-11-25");
+   versionsField.set(asyncServer, extended);
+   ```
+
+   CGLIB proxying is not viable because `WebMvcStreamableServerTransportProvider` has a
+   private constructor — `Enhancer.filterConstructors` throws before Objenesis can
+   bypass it.
+
+**Startup log entry confirming the patch was applied:**
+```
+INFO McpProtocolVersionConfig : MCP server protocol versions extended to: [2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25]
+```
+
+**If Spring AI is ever upgraded to a version compatible with Spring Boot 3.x that natively
+supports `2025-11-25`**, `McpProtocolVersionConfig` can be deleted — it is idempotent
+(`contains()` check) and the startup log line confirms whether the patch is active.
 
 ---
 
@@ -698,6 +749,14 @@ change to the active partition.
 ---
 
 ## 12. Known limitations and future work
+
+### Spring AI version pinned to 1.1.4
+
+Spring AI 2.0.x targets Spring Boot 4.x / Jackson 3.x and is not compatible with our Spring
+Boot 3.5.x stack. `McpProtocolVersionConfig` bridges the MCP protocol gap (see §8). When a
+Spring AI 2.x release compatible with Spring Boot 3.x is available, upgrade the BOM, remove
+`McpProtocolVersionConfig`, and drop the `dependencyManagement` overrides for
+`io.modelcontextprotocol.sdk` artefacts.
 
 ### `last_used_at` is never updated
 
