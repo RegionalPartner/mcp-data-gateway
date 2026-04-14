@@ -103,12 +103,19 @@ public class OAuthController {
     /** Shows the API key entry form. Claude Code opens this in the system browser. */
     @GetMapping("/oauth/authorize")
     public ResponseEntity<String> authorizeForm(
-            @RequestParam("response_type") String responseType,
-            @RequestParam("client_id") String clientId,
-            @RequestParam("redirect_uri") String redirectUri,
-            @RequestParam("code_challenge") String codeChallenge,
-            @RequestParam("code_challenge_method") String codeChallengeMethod,
+            @RequestParam(value = "response_type", required = false) String responseType,
+            @RequestParam(value = "client_id", required = false) String clientId,
+            @RequestParam(value = "redirect_uri", required = false) String redirectUri,
+            @RequestParam(value = "code_challenge", required = false) String codeChallenge,
+            @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
             @RequestParam(value = "state", required = false, defaultValue = "") String state) {
+        if (redirectUri == null || redirectUri.isBlank()
+                || codeChallenge == null || codeChallenge.isBlank()
+                || clientId == null || clientId.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .contentType(MediaType.TEXT_HTML)
+                    .body(buildSessionExpiredPage());
+        }
         if (!"code".equals(responseType) || !"S256".equals(codeChallengeMethod)) {
             return ResponseEntity.badRequest()
                     .contentType(MediaType.TEXT_PLAIN)
@@ -237,6 +244,43 @@ public class OAuthController {
                 escapeHtml(codeChallenge),
                 escapeHtml(codeChallengeMethod),
                 escapeHtml(state));
+    }
+
+    private String buildSessionExpiredPage() {
+        return """
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width,initial-scale=1">
+                  <title>MCP Data Gateway — Session Expired</title>
+                  <style>
+                    *{box-sizing:border-box;margin:0;padding:0}
+                    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+                         background:#f0f2f5;display:flex;align-items:center;
+                         justify-content:center;min-height:100vh}
+                    .card{background:#fff;border-radius:10px;padding:2rem 2.5rem;
+                          box-shadow:0 2px 12px rgba(0,0,0,.1);max-width:420px;width:90%%}
+                    h1{font-size:1.15rem;color:#c0392b;margin-bottom:.75rem}
+                    p{font-size:.875rem;color:#555;line-height:1.6;margin-bottom:.75rem}
+                    code{background:#f4f4f4;padding:.1rem .35rem;border-radius:4px;
+                         font-size:.8rem;color:#333}
+                  </style>
+                </head>
+                <body>
+                  <div class="card">
+                    <h1>Authorization session expired</h1>
+                    <p>This page was opened with incomplete or missing OAuth parameters —
+                       the authorization session has expired or the URL was truncated.</p>
+                    <p>Do not refresh or navigate to this page directly.
+                       Return to your AI client (e.g. Claude Code) and reconnect the
+                       MCP server to start a fresh authorization flow.</p>
+                    <p>In Claude Code: remove and re-add the MCP server, or run
+                       <code>/mcp</code> to manage connections.</p>
+                  </div>
+                </body>
+                </html>
+                """;
     }
 
     private String escapeHtml(String input) {

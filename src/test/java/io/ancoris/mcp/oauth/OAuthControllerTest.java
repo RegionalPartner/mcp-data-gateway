@@ -101,6 +101,27 @@ class OAuthControllerTest {
     }
 
     @Test
+    void authorizeForm_missingRedirectUri_returns400WithSessionExpiredPage() {
+        var response = controller.authorizeForm(
+                "code", "client", null, "challenge", "S256", "");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.TEXT_HTML);
+        assertThat(response.getBody()).contains("Authorization session expired");
+        assertThat(response.getBody()).contains("Return to your AI client");
+    }
+
+    @Test
+    void authorizeForm_missingClientId_returns400WithSessionExpiredPage() {
+        var response = controller.authorizeForm(
+                "code", null, REDIRECT_URI, "challenge", "S256", "");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.TEXT_HTML);
+        assertThat(response.getBody()).contains("Authorization session expired");
+    }
+
+    @Test
     void authorizeForm_xssInClientId_escapedInOutput() {
         var response = controller.authorizeForm(
                 "code", "<script>alert(1)</script>", REDIRECT_URI, "challenge", "S256", "");
