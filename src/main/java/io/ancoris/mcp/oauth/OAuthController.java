@@ -156,7 +156,8 @@ public class OAuthController {
                     .findFirst()
                     .orElse(null);
             if (cached != null) {
-                log.debug("OAuth form recovered for truncated client_id prefix '{}'", clientId);
+                log.debug("OAuth form recovered for truncated client_id prefix '{}'",
+                        clientId.replaceAll("[\r\n\t]", "_"));
                 return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
                         .body(buildAuthorizeForm(cached.clientId(), cached.redirectUri(),
                                 cached.codeChallenge(), cached.codeChallengeMethod(), cached.state()));
