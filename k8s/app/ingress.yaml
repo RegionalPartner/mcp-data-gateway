@@ -12,11 +12,15 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     # MCP session affinity: Spring AI stores the SSE emitter in JVM heap, making each
-    # MCP session physically bound to one pod. Route all requests from the same client
-    # IP to the same replica to prevent "session not found" failures across replicas.
-    # See docs/ARCHITECTURE.md § "Horizontal scaling and MCP session affinity" for
-    # the full analysis and the long-term mitigation options.
-    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+    # MCP session physically bound to one pod. We hash first by mcp-session-id (present
+    # on all follow-up GET /mcp SSE and POST requests) and fall back to client IP for
+    # the initial sessionless request. This routes every request in a session to the
+    # same replica even when the caller (e.g. Anthropic/Toolbox vs Anthropic/ClaudeAI)
+    # originates from different egress IPs.
+    # NOTE: with replicas=1 this annotation is a no-op but kept for when a shared
+    # session store (Redis) is added and replicas > 1 is safe again.
+    # See docs/ARCHITECTURE.md § "Horizontal scaling and MCP session affinity".
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$http_mcp_session_id$remote_addr"
 spec:
   ingressClassName: nginx
   tls:

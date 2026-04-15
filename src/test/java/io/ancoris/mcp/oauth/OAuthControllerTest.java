@@ -211,7 +211,7 @@ class OAuthControllerTest {
         String code = authCodeStore.issue("myhash", AccessRole.ADMIN, REDIRECT_URI, challenge, "S256");
 
         var response = controller.token(
-                "authorization_code", code, REDIRECT_URI, verifier, "client");
+                "authorization_code", code, REDIRECT_URI, verifier, "client", null);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsKey("access_token");
@@ -225,7 +225,7 @@ class OAuthControllerTest {
         String code = authCodeStore.issue("hash", AccessRole.READ_ONLY, REDIRECT_URI, challenge, "S256");
 
         var response = controller.token(
-                "authorization_code", code, REDIRECT_URI, "wrong-verifier", null);
+                "authorization_code", code, REDIRECT_URI, "wrong-verifier", null, null);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().get("error")).isEqualTo("invalid_grant");
@@ -234,7 +234,7 @@ class OAuthControllerTest {
     @Test
     void token_unknownCode_returns400WithInvalidGrant() {
         var response = controller.token(
-                "authorization_code", "nonexistent", REDIRECT_URI, "verifier", null);
+                "authorization_code", "nonexistent", REDIRECT_URI, "verifier", null, null);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().get("error")).isEqualTo("invalid_grant");
@@ -246,7 +246,7 @@ class OAuthControllerTest {
         String code = authCodeStore.issue("h", AccessRole.READ_ONLY, REDIRECT_URI, challenge, "S256");
 
         var response = controller.token(
-                "authorization_code", code, "https://other.example.com/cb", "v", null);
+                "authorization_code", code, "https://other.example.com/cb", "v", null, null);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().get("error")).isEqualTo("invalid_grant");
@@ -255,7 +255,7 @@ class OAuthControllerTest {
     @Test
     void token_unsupportedGrantType_returns400() {
         var response = controller.token(
-                "client_credentials", "code", REDIRECT_URI, "verifier", null);
+                "client_credentials", "code", REDIRECT_URI, "verifier", null, null);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody().get("error")).isEqualTo("unsupported_grant_type");
@@ -267,8 +267,8 @@ class OAuthControllerTest {
         String challenge = computeS256(verifier);
         String code = authCodeStore.issue("h", AccessRole.ADMIN, REDIRECT_URI, challenge, "S256");
 
-        controller.token("authorization_code", code, REDIRECT_URI, verifier, null);
-        var second = controller.token("authorization_code", code, REDIRECT_URI, verifier, null);
+        controller.token("authorization_code", code, REDIRECT_URI, verifier, null, null);
+        var second = controller.token("authorization_code", code, REDIRECT_URI, verifier, null, null);
 
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(second.getBody().get("error")).isEqualTo("invalid_grant");

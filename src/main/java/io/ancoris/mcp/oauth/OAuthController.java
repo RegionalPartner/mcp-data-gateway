@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -60,6 +61,7 @@ public class OAuthController {
             .maximumSize(50)
             .build();
 
+
     private record AuthorizeParams(String responseType, String clientId, String redirectUri,
                                     String codeChallenge, String codeChallengeMethod, String state) { }
 
@@ -91,26 +93,32 @@ public class OAuthController {
         meta.put("response_types_supported", List.of("code"));
         meta.put("grant_types_supported", List.of("authorization_code"));
         meta.put("code_challenge_methods_supported", List.of("S256"));
-        meta.put("token_endpoint_auth_methods_supported", List.of("none"));
+        meta.put("token_endpoint_auth_methods_supported", List.of("none", "client_secret_post"));
         return meta;
     }
 
     /**
      * RFC 7591: Dynamic Client Registration — required by the MCP TypeScript SDK.
-     * We accept any registration and return a client_id; no state is persisted because
-     * all clients are treated as public (no client secret, PKCE required).
+     *
+     * <p>Returns a {@code client_secret} so that confidential-client MCP hosts (e.g. Mistral
+     * Le Chat) can store their OAuth session credentials and later perform a server-to-server
+     * token exchange using {@code client_secret_post}. Public clients (e.g. Claude Code) that
+     * use PKCE may ignore the secret.
      */
     @PostMapping(path = "/oauth/register", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseBody
     public ResponseEntity<Map<String, Object>> register(@RequestBody Map<String, Object> request) {
         String clientId = UUID.randomUUID().toString();
+        String clientSecret = jwtTokenService.deriveClientSecret(clientId);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("client_id", clientId);
         response.put("client_id_issued_at", Instant.now().getEpochSecond());
+        response.put("client_secret", clientSecret);
+        response.put("client_secret_expires_at", 0);
         response.put("redirect_uris", request.getOrDefault("redirect_uris", List.of()));
         response.put("grant_types", List.of("authorization_code"));
         response.put("response_types", List.of("code"));
-        response.put("token_endpoint_auth_method", "none");
+        response.put("token_endpoint_auth_method", "client_secret_post");
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -189,22 +197,35 @@ public class OAuthController {
         ApiKey key = keyOpt.get();
         String code = authCodeStore.issue(
                 key.getKeyHash(), key.getRole(), redirectUri, codeChallenge, codeChallengeMethod);
-        String location = redirectUri + "?code=" + code
-                + (state.isBlank() ? "" : "&state=" + state);
+        String location = redirectUri + "?code=" + URLEncoder.encode(code, StandardCharsets.UTF_8)
+                + "&iss=" + URLEncoder.encode(issuer, StandardCharsets.UTF_8)
+                + (state.isBlank() ? "" : "&state=" + URLEncoder.encode(state, StandardCharsets.UTF_8));
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create(location))
                 .build();
     }
 
-    /** Validates the PKCE verifier, consumes the code, and issues a Bearer JWT. */
+    /**
+     * Validates client credentials and issues a Bearer JWT.
+     *
+     * <p>Accepts two authentication modes:
+     * <ul>
+     *   <li><b>PKCE</b> ({@code code_verifier}) — used by public clients such as Claude Code.</li>
+     *   <li><b>client_secret_post</b> ({@code client_id} + {@code client_secret}) — used by
+     *       confidential-client MCP hosts such as Mistral Le Chat whose backend performs the
+     *       token exchange server-to-server.</li>
+     * </ul>
+     * At least one mode must pass; both may be present simultaneously.
+     */
     @PostMapping(path = "/oauth/token", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     @ResponseBody
     public ResponseEntity<Map<String, Object>> token(
             @RequestParam("grant_type") String grantType,
             @RequestParam("code") String code,
             @RequestParam("redirect_uri") String redirectUri,
-            @RequestParam("code_verifier") String codeVerifier,
-            @RequestParam(value = "client_id", required = false) String clientId) {
+            @RequestParam(value = "code_verifier", required = false) String codeVerifier,
+            @RequestParam(value = "client_id", required = false) String clientId,
+            @RequestParam(value = "client_secret", required = false) String clientSecret) {
         if (!"authorization_code".equals(grantType)) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "unsupported_grant_type"));
@@ -217,7 +238,11 @@ public class OAuthController {
         if (!entry.redirectUri().equals(redirectUri)) {
             return ResponseEntity.badRequest().body(Map.of("error", "invalid_grant"));
         }
-        if (!verifyPkce(codeVerifier, entry.codeChallenge())) {
+        boolean pkceOk = codeVerifier != null && !codeVerifier.isBlank()
+                && verifyPkce(codeVerifier, entry.codeChallenge());
+        boolean secretOk = clientId != null && clientSecret != null
+                && clientSecret.equals(jwtTokenService.deriveClientSecret(clientId));
+        if (!pkceOk && !secretOk) {
             return ResponseEntity.badRequest().body(Map.of("error", "invalid_grant"));
         }
         String jwt = jwtTokenService.issue(entry.keyHash(), entry.role());
