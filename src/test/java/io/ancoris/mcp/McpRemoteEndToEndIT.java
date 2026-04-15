@@ -2,7 +2,6 @@ package io.ancoris.mcp;
 
 import io.ancoris.mcp.connector.ContentEncryptor;
 import io.ancoris.mcp.integration.AbstractIntegrationTest;
-import io.ancoris.mcp.security.RateLimiterFilter;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
@@ -101,23 +100,30 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
-    @Autowired
-    private RateLimiterFilter rateLimiterFilter;
-
     /**
-     * No persistent sessions.
+     * True when OVH is reachable and all requests target the remote cluster.
+     * False in CI (OVH unreachable) — all requests target the local embedded server.
      *
-     * On OVH (older MCP image) the server ties every session to the API key
-     * that created it AND appears to invalidate older sessions when a new one is
-     * opened. Two long-lived sessions (one per key) therefore cause intermittent
-     * failures because the second openSession() call silently kills the first.
-     *
-     * The fix: {@link #call} opens a fresh per-call session using exactly the
-     * right API key, makes the single tool-call, and abandons the session. Cost:
-     * 2 extra HTTP round-trips per test; benefit: no shared mutable session state.
+     * <p>Session strategy differs by mode:
+     * <ul>
+     *   <li><b>Local</b>: one shared session ({@link #localSessionId}) created in
+     *       {@code @BeforeAll}, reused by every test. Prevents session-map accumulation
+     *       in the Spring AI MCP server.</li>
+     *   <li><b>OVH</b>: fresh per-call session. OVH's older MCP image ties each session
+     *       to the creating API key and invalidates earlier sessions when a new one is
+     *       opened for the same key.</li>
+     * </ul>
      */
     private boolean targetingOvh;
     private boolean semanticSearchAvailable;
+
+    /**
+     * Shared MCP session used when running against the local embedded server.
+     * Created once in {@code @BeforeAll} and reused across all tests to avoid
+     * session accumulation in the Spring AI MCP server's session map.
+     * {@code null} when {@link #targetingOvh} is true (OVH uses per-call sessions).
+     */
+    private String localSessionId;
 
     // Local-only fixtures (not inserted when targeting OVH)
     private UUID semanticChunkId;
@@ -129,15 +135,6 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
 
     @BeforeAll
     void setUpAll() throws SSLException {
-        // McpEndToEndIT and McpRemoteEndToEndIT share one Spring context. The
-        // per-IP sliding window accumulates across both classes. Reset it here
-        // so this class starts with a clean slate.
-        // Also raise the in-memory limit to 300 directly: @TestPropertySource and
-        // application-test.yaml overrides are not picked up at @Value injection time
-        // in this shared context, so the field stays at its default of 60 without this.
-        rateLimiterFilter.clearRequestLog();
-        rateLimiterFilter.maxRequestsPerWindow = 300;
-
         targetingOvh = isOvhHealthy();
 
         if (targetingOvh) {
@@ -150,12 +147,18 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
                     .build();
             populateEncryptedContent();
             insertSemanticChunks();
+
+            // Create ONE shared session for the whole class (avoids session
+            // accumulation in the MCP server when tests run sequentially).
+            ResponseEntity<String> initResp = restCall(ADMIN_KEY, null, initializeRequest());
+            localSessionId = initResp.getHeaders().getFirst("Mcp-Session-Id");
+            restCall(ADMIN_KEY, localSessionId, initializedNotification());
         }
 
         // Detect whether the target has semantic_search_documents.
         // OVH currently runs a pre-V7 image (no pgvector / no Ollama), so the
         // tool is absent there. Semantic tests will be ABORTED, not FAILED.
-        String toolsBody = call(ADMIN_KEY, toolsList()).getBody();
+        String toolsBody = restCall(ADMIN_KEY, localSessionId, toolsList()).getBody();
         semanticSearchAvailable = toolsBody != null
                 && toolsBody.contains("semantic_search_documents");
 
@@ -521,17 +524,24 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
     // -----------------------------------------------------------------------
 
     /**
-     * Opens a fresh MCP session with {@code apiKey}, sends the tool/meta call in
-     * {@code body} on that session, and returns the raw HTTP response.
+     * Sends a tool/meta call and returns the raw HTTP response.
      *
-     * <p>Creating a new session for every call is the only approach that works
-     * reliably against OVH's older MCP image: that server binds each session to
-     * the API key used during {@code initialize} and, worse, invalidates older
-     * sessions when a new one is created. Using one long-lived session per key
-     * therefore causes race-condition failures.
+     * <p><b>Local mode</b>: reuses {@link #localSessionId} (one session shared
+     * across all tests). This avoids MCP server session-map accumulation that
+     * previously caused {@code initialize} to fail after several tests.
+     *
+     * <p><b>OVH mode</b>: opens a fresh session per call. OVH's older MCP image
+     * binds each session to the creating API key and invalidates older sessions
+     * when a new one is opened for the same key, making a long-lived shared
+     * session unreliable.
      */
     private ResponseEntity<String> call(String apiKey, String body) {
-        // Step 1 — initialize: obtain a fresh Mcp-Session-Id tied to apiKey
+        if (!targetingOvh) {
+            // Local: reuse the single shared session created in @BeforeAll
+            return restCall(apiKey, localSessionId, body);
+        }
+
+        // OVH: fresh session per call — the only safe approach for the older image
         ResponseEntity<String> initResp = restCall(apiKey, null, initializeRequest());
         assertThat(initResp.getStatusCode().value())
                 .as("initialize must return 200")
@@ -540,11 +550,7 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
         assertThat(sid)
                 .as("server must return Mcp-Session-Id header after initialize")
                 .isNotNull();
-
-        // Step 2 — notifications/initialized (fire-and-forget, result not inspected)
         restCall(apiKey, sid, initializedNotification());
-
-        // Step 3 — actual tool/meta call on the freshly bound session
         return restCall(apiKey, sid, body);
     }
 
