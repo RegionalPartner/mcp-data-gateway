@@ -218,8 +218,9 @@ The gateway's tool model is additive — new `@Tool` classes drop in without tou
 | **Zoho CRM / Zoho One** | Expose contacts, opportunities, and project pipeline to AI agents — without the agent ever seeing CRM credentials |
 | **Microsoft 365 / Google Workspace** | Search past emails and meeting notes by project or client — *"find all exchanges with the CCIM on the cosmetics file"* |
 | **SharePoint / Google Drive** | Ingest documents from existing team drives on a schedule |
+| **AWS S3 / Azure Blob / GCP Storage / OVH Object Storage** | Pull documents stored in any major cloud — the gateway normalises access regardless of where the data lives |
 
-In all cases the gateway acts as a credential proxy: the AI model sees only the query result, never the upstream API keys.
+In all cases the gateway acts as a credential proxy: the AI model sees only the query result, never the upstream API keys. The gateway itself is cloud-agnostic — it deploys on any Kubernetes cluster (OVH, AWS EKS, Azure AKS, GCP GKE) with provider-specific Terraform.
 
 ### Monitoring feed as a queryable source
 

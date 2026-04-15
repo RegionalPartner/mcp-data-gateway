@@ -194,8 +194,9 @@ Le modèle d'outils de la passerelle est additif — les nouvelles classes `@Too
 | **Zoho CRM / Zoho One** | Exposer les contacts, opportunités et pipeline commercial aux agents IA — sans que l'agent voie jamais les credentials CRM |
 | **Microsoft 365 / Google Workspace** | Chercher dans les emails et comptes-rendus de réunion passés par projet ou client — *"retrouve les échanges avec la CCIM sur le dossier cosmétiques"* |
 | **SharePoint / Google Drive** | Ingérer les documents depuis les drives d'équipe existants selon un planning |
+| **AWS S3 / Azure Blob / GCP Storage / OVH Object Storage** | Récupérer les documents stockés dans n'importe quel cloud — la passerelle normalise l'accès quelle que soit l'origine des données |
 
-Dans tous les cas, la passerelle agit comme proxy de credentials : l'agent IA ne voit que le résultat de la requête, jamais les clés API amont.
+Dans tous les cas, la passerelle agit comme proxy de credentials : l'agent IA ne voit que le résultat de la requête, jamais les clés API amont. La passerelle elle-même est cloud-agnostique — elle se déploie sur tout cluster Kubernetes (OVH, AWS EKS, Azure AKS, GCP GKE) avec un Terraform adapté au provider.
 
 ### Fil de veille comme source interrogeable
 
