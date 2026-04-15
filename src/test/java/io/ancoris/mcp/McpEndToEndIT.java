@@ -49,6 +49,9 @@ import static org.mockito.Mockito.when;
  * closes the stream prematurely). Reactor Netty handles chunked SSE correctly.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+// NOTE: @TestPropertySource establishes the same Spring context key as McpRemoteEndToEndIT,
+// isolating both from RateLimiterFilterIT which overrides max-requests=60. The value 300
+// is redundant with application-test.yaml — this annotation exists for context-key isolation.
 @TestPropertySource(properties = "mcp.security.rate-limit.max-requests=300")
 class McpEndToEndIT extends AbstractIntegrationTest {
 
