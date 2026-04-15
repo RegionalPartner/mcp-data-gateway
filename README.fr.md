@@ -1,11 +1,17 @@
-# mcp-data-gateway
+<div align="center">
 
-> **Une passerelle MCP de qualité production** qui expose les données d'entreprise aux agents IA via un accès sécurisé et contrôlé par rôle — construite et publiée en open source par [Ancoris](https://www.ancoris.fr), la division numérique et IA du [Groupe AXTOM](https://www.ancoris.fr).
+# Le Pont Sécurisé entre vos Données d'Entreprise et l'IA
+
+**Donnez à vos agents IA un accès à vos données internes — sans exposer vos credentials, sans contourner la sécurité, sans reconstruire votre infrastructure.**
 
 [![CI](https://github.com/RegionalPartner/mcp-data-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/RegionalPartner/mcp-data-gateway/actions/workflows/ci.yml)
 [![Licence : MIT](https://img.shields.io/badge/Licence-MIT-yellow.svg)](LICENSE)
 
 🇫🇷 Français | [🇬🇧 English](README.md)
+
+*Construit et publié en open source par [Ancoris](https://www.ancoris.fr) — conseil IA & numérique, Groupe AXTOM*
+
+</div>
 
 ---
 
@@ -44,7 +50,11 @@ Essayez de demander à votre agent IA : *"Liste les sources de données disponib
 
 ---
 
+<div align="center">
+
 ![MCP Data Gateway — Le pont sécurisé entre vos données et l'IA](docs/assets/mcp-gateway-overview.png)
+
+</div>
 
 ## Ce que ça fait
 
