@@ -1,11 +1,17 @@
-# mcp-data-gateway
+<div align="center">
 
-> **A production-grade MCP server** that exposes enterprise data to AI agents through a secured, role-based gateway — built and open-sourced by [Ancoris](https://www.ancoris.fr), the digital and AI consulting division of [Groupe AXTOM](https://www.ancoris.fr).
+# The Secure Bridge Between Your Enterprise Data and AI
+
+**Give your AI agents access to your internal data — without exposing credentials, bypassing security, or rebuilding your infrastructure.**
 
 [![CI](https://github.com/RegionalPartner/mcp-data-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/RegionalPartner/mcp-data-gateway/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 🇬🇧 English | [🇫🇷 Français](README.fr.md)
+
+*Built and open-sourced by [Ancoris](https://www.ancoris.fr) — AI & digital consulting, Groupe AXTOM*
+
+</div>
 
 ---
 
@@ -44,7 +50,11 @@ Try asking your AI agent: *"List the available data sources"* or *"Search for do
 
 ---
 
+<div align="center">
+
 ![MCP Data Gateway — overview](docs/assets/mcp-gateway-overview.png)
+
+</div>
 
 ## What it does
 
