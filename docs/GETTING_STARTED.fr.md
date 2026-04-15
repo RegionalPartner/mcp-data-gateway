@@ -1,7 +1,11 @@
 # MCP Data Gateway — Prise en main
 
-Guide pas-à-pas pour connecter Claude Code à la passerelle de démonstration.
+Guide pas-à-pas pour connecter un client IA à la passerelle de démonstration.
 Aucune compétence technique requise.
+
+**Clients testés :** Claude Code (CLI) · claude.ai · Mistral Le Chat
+
+Ce guide utilise Claude Code (CLI). Voir [Autres clients testés](#autres-clients-testés) en bas de page pour claude.ai et Mistral.
 
 [🇬🇧 English](GETTING_STARTED.md) | 🇫🇷 Français
 
@@ -26,9 +30,8 @@ La passerelle utilise des clés API pour contrôler les accès. Deux clés de d�
 
 Si vous n'avez pas encore Claude Code :
 
-- **Mac ou Windows :** téléchargez depuis [claude.ai/code](https://claude.ai/code) et installez l'application
+- **Terminal (toutes plateformes) :** `npm install -g @anthropic-ai/claude-code` (nécessite Node.js 18+)
 - **VS Code / JetBrains :** installez l'extension Claude Code depuis le marketplace
-- **Terminal :** `npm install -g @anthropic-ai/claude-code` (nécessite Node.js 18+)
 
 Ouvrez un terminal et lancez `claude` pour vérifier que l'installation fonctionne.
 
@@ -162,6 +165,26 @@ Que dit la politique RH sur le recrutement ?
 | "Aucun document trouvé" sur les sujets RH | Vous utilisez la clé lecture seule — passez à `demo-admin-key-001` |
 | Token expiré | Lancez `/mcp` → **Re-authenticate** |
 | Connecté mais aucun outil n'apparaît | Redémarrez Claude Code |
+
+---
+
+## Autres clients testés
+
+### claude.ai
+
+1. Ouvrez [claude.ai](https://claude.ai) et allez dans **Paramètres → Intégrations**
+2. Ajoutez un serveur MCP avec l'URL `https://mcp.37.59.24.118.nip.io/mcp`
+3. Claude vous demandera de vous authentifier — saisissez l'une des clés de démo
+4. Démarrez une conversation et essayez : *"Quelles données sont disponibles dans la passerelle ?"*
+
+### Mistral Le Chat
+
+1. Ouvrez [chat.mistral.ai](https://chat.mistral.ai) et allez dans **Paramètres → Serveurs MCP**
+2. Ajoutez l'URL `https://mcp.37.59.24.118.nip.io/mcp`
+3. Authentifiez-vous avec une clé de démo lorsque demandé
+4. Démarrez une conversation et essayez les mêmes exemples
+
+> D'autres clients compatibles MCP peuvent fonctionner mais n'ont pas été testés avec cette passerelle.
 
 ---
 
