@@ -10,7 +10,7 @@ plugins {
     id("jacoco")
     id("checkstyle")
     id("com.github.spotbugs") version "6.0.9"
-    id("org.owasp.dependencycheck") version "9.2.0"
+    id("org.owasp.dependencycheck") version "12.2.1"
 }
 
 group = "io.ancoris"
