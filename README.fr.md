@@ -44,6 +44,8 @@ Essayez de demander à votre agent IA : *"Liste les sources de données disponib
 
 ---
 
+![MCP Data Gateway — Le pont sécurisé entre vos données et l'IA](docs/assets/mcp-gateway-overview.png)
+
 ## Ce que ça fait
 
 Quatre outils MCP, exposés via OAuth 2.0 PKCE (transport HTTP streamable) :
