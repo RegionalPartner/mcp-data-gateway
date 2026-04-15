@@ -131,10 +131,12 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
     void setUpAll() throws SSLException {
         // McpEndToEndIT and McpRemoteEndToEndIT share one Spring context. The
         // per-IP sliding window accumulates across both classes. Reset it here
-        // so this class starts with a clean slate (the @TestPropertySource limit
-        // of 300 is intended but @Value field injection silently falls back to
-        // the default of 60 in the shared IT context).
+        // so this class starts with a clean slate.
+        // Also raise the in-memory limit to 300 directly: @TestPropertySource and
+        // application-test.yaml overrides are not picked up at @Value injection time
+        // in this shared context, so the field stays at its default of 60 without this.
         rateLimiterFilter.clearRequestLog();
+        rateLimiterFilter.maxRequestsPerWindow = 300;
 
         targetingOvh = isOvhHealthy();
 
@@ -176,13 +178,7 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
     }
 
     @BeforeEach
-    void setUpEach() {
-        // Reset the per-IP sliding window so each test starts with a clean slate.
-        // Each test makes at most 3 rate-limited requests (init + notif + tool call),
-        // well under the 60-request default limit. Without this reset the class-level
-        // request count can exceed 60 and trigger 429 on later tests.
-        rateLimiterFilter.clearRequestLog();
-
+    void maybeConfigureEmbeddingMock() {
         if (!targetingOvh) {
             // Local: EmbeddingModel is a @MockBean — return a deterministic vector
             when(embeddingModel.embed(anyString())).thenReturn(SEMANTIC_VECTOR);
