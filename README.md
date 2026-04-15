@@ -44,6 +44,8 @@ Try asking your AI agent: *"List the available data sources"* or *"Search for do
 
 ---
 
+![MCP Data Gateway — overview](docs/assets/mcp-gateway-overview.png)
+
 ## What it does
 
 Four MCP tools, exposed over OAuth 2.0 PKCE (streamable HTTP transport):
