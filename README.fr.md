@@ -23,6 +23,7 @@ Le côté ingestion des données n'est intentionnellement pas inclus dans cette 
 
 - [Démo en ligne](#démo-en-ligne)
 - [Ce que ça fait](#ce-que-ça-fait)
+- [Pour les DSI et responsables sécurité](#pour-les-dsi-et-responsables-sécurité)
 - [Modèle de sécurité](#modèle-de-sécurité)
 - [Stack technique](#stack-technique)
 - [Démarrage rapide](#démarrage-rapide-local)
@@ -74,6 +75,45 @@ Quatre outils MCP, exposés via OAuth 2.0 PKCE (transport HTTP streamable) :
 | `semantic_search_documents` | Recherche par similarité vectorielle (pgvector + Ollama) — trouve le contenu conceptuellement proche même sans correspondance exacte de mots-clés |
 
 Chaque appel d'outil est inscrit dans un journal d'audit immuable.
+
+---
+
+## Pour les DSI et responsables sécurité
+
+La passerelle n'est pas un service de stockage cloud. Elle ne copie, ne réplique ni n'héberge vos données. **C'est une couche de contrôle d'accès** — elle gère quels fragments de vos données existantes peuvent être partagés avec un LLM, et dans quelles conditions.
+
+### Ce qui se passe quand vous connectez une source de données existante
+
+Prenons l'exemple d'un tenant Microsoft 365. Votre tenant reste exactement là où il est — SharePoint, Exchange et Teams demeurent dans l'infrastructure Microsoft, sous vos licences et politiques de gouvernance existantes.
+
+Ce que la passerelle ajoute, c'est une étape d'ingestion contrôlée et une interface de requête :
+
+| Étape | Ce qui se passe | Ce que la passerelle stocke |
+|-------|----------------|----------------------------|
+| Vous sélectionnez les sources | Une bibliothèque SharePoint, une boîte partagée, un canal Teams | Rien pour l'instant |
+| L'ingestion s'exécute | Les documents sont extraits → découpés en fragments texte → vectorisés par un modèle local (Ollama) | Fragments texte + embeddings vectoriels uniquement — jamais le fichier original |
+| La classification est assignée | Chaque fragment est tagué PUBLIC, INTERNAL ou CONFIDENTIAL selon votre politique | Métadonnées de classification |
+| Le LLM envoie une requête | L'IA pose une question à la passerelle | Rien — la requête est transitoire |
+| La passerelle filtre et répond | Seuls les fragments que le rôle de l'appelant est autorisé à voir sont retournés | La requête est inscrite dans le journal d'audit |
+
+**Le LLM ne se connecte jamais à votre tenant M365.** Il envoie une question à la passerelle ; la passerelle retourne des fragments de texte filtrés. Aucune credential SharePoint, aucun token Exchange, aucun fichier brut n'est jamais exposé au modèle IA.
+
+### Ce que la passerelle ne fait pas
+
+- Ne stocke pas les fichiers bruts (PDF, DOCX, pièces jointes, images, vidéos)
+- N'indexe pas tout votre tenant — uniquement les sources que vous configurez explicitement
+- Ne donne pas accès au LLM aux boîtes personnelles, données de calendrier ou OneDrive personnel, sauf ajout explicite
+- N'envoie aucune donnée à des API IA externes — le modèle d'embedding (Ollama) tourne localement dans votre infrastructure
+
+### Ce que cela signifie concrètement
+
+| Préoccupation | Comment la passerelle y répond |
+|---------------|-------------------------------|
+| Souveraineté des données | Toutes les données restent dans votre infrastructure — PostgreSQL et Ollama tournent dans votre cluster |
+| Contrôle du périmètre | Vous définissez chaque source explicitement — rien n'est ingéré par défaut |
+| Segmentation des accès | Les rôles READ_ONLY et ADMIN contrôlent ce que chaque utilisateur IA peut interroger |
+| Auditabilité | Chaque requête est journalisée avec la clé, l'outil appelé et le résumé du résultat |
+| RGPD / classification | Les niveaux PUBLIC / INTERNAL / CONFIDENTIAL correspondent directement à votre politique de sécurité de l'information |
 
 ---
 
