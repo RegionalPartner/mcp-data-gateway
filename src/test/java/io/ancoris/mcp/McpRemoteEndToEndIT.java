@@ -176,7 +176,13 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
     }
 
     @BeforeEach
-    void maybeConfigureEmbeddingMock() {
+    void setUpEach() {
+        // Reset the per-IP sliding window so each test starts with a clean slate.
+        // Each test makes at most 3 rate-limited requests (init + notif + tool call),
+        // well under the 60-request default limit. Without this reset the class-level
+        // request count can exceed 60 and trigger 429 on later tests.
+        rateLimiterFilter.clearRequestLog();
+
         if (!targetingOvh) {
             // Local: EmbeddingModel is a @MockBean — return a deterministic vector
             when(embeddingModel.embed(anyString())).thenReturn(SEMANTIC_VECTOR);
