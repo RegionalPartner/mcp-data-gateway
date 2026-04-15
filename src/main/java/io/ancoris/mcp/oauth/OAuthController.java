@@ -190,9 +190,9 @@ public class OAuthController {
         ApiKey key = keyOpt.get();
         String code = authCodeStore.issue(
                 key.getKeyHash(), key.getRole(), redirectUri, codeChallenge, codeChallengeMethod);
-        String location = redirectUri + "?code=" + code
+        String location = redirectUri + "?code=" + URLEncoder.encode(code, StandardCharsets.UTF_8)
                 + "&iss=" + URLEncoder.encode(issuer, StandardCharsets.UTF_8)
-                + (state.isBlank() ? "" : "&state=" + state);
+                + (state.isBlank() ? "" : "&state=" + URLEncoder.encode(state, StandardCharsets.UTF_8));
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create(location))
                 .build();
