@@ -59,7 +59,7 @@ Essayez : *"Liste les sources de données disponibles"* ou *"Cherche des documen
 
 <div align="center">
 
-![MCP Data Gateway — Le pont sécurisé entre vos données et l'IA](docs/assets/mcp-gateway-overview.png)
+![Passerelle de Données MCP — Couche d'Accès Sécurisée](docs/assets/mcp-gateway-overview.png)
 
 </div>
 

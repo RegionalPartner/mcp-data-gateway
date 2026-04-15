@@ -59,7 +59,7 @@ Try asking: *"List the available data sources"* or *"Search for documents about 
 
 <div align="center">
 
-![MCP Data Gateway — overview](docs/assets/mcp-gateway-overview.png)
+![MCP Data Gateway — Controlled Access Layer](docs/assets/mcp-gateway-overview.png)
 
 </div>
 
