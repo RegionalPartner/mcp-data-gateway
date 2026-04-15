@@ -4,7 +4,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import java.util.Map;
 import java.util.UUID;
@@ -33,10 +32,12 @@ public class AuditService {
     }
 
     /**
-     * SEC-022: named executor with CallerRunsPolicy — entries are never silently dropped.
+     * SEC-022: synchronous write — audit entry is flushed to DB before the calling
+     * method returns, eliminating the JVM-crash data-loss window of the previous
+     * @Async approach. The write participates in the caller's transaction (managed
+     * by RlsContextAspect) and commits with it.
      * SEC-014: increments mcp.tool.calls counter per tool invocation.
      */
-    @Async("auditExecutor")
     public void log(String toolName, UUID apiKeyId, Map<String, Object> params, String resultSummary) {
         meterRegistry.counter("mcp.tool.calls", "tool", toolName).increment();
         var entry = new AuditLog(toolName, apiKeyId, params, resultSummary);

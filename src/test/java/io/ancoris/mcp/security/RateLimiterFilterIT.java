@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -16,8 +17,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Integration test for the per-IP sliding-window rate limiter (SEC-002).
  * Each test method uses a dedicated IP address to avoid cross-test interference
  * (the RateLimiterFilter bean is shared across the Spring context).
+ *
+ * Overrides the test-profile max-requests back to 60 so the boundary assertions
+ * (60 allowed, 61st rejected) remain meaningful.
  */
 @AutoConfigureMockMvc
+@TestPropertySource(properties = "mcp.security.rate-limit.max-requests=60")
 class RateLimiterFilterIT extends AbstractIntegrationTest {
 
     @Autowired

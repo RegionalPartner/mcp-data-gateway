@@ -14,7 +14,7 @@
 6. [Project structure](#6-project-structure)
 7. [Database schema](#7-database-schema)
 8. [Security layer](#8-security-layer)
-9. [The three MCP tools](#9-the-three-mcp-tools)
+9. [The four MCP tools](#9-the-four-mcp-tools)
 10. [Configuration files](#10-configuration-files)
 11. [Running locally](#11-running-locally)
 12. [Tests](#12-tests)
@@ -40,9 +40,10 @@ Employee's AI assistant
         └──► PostgreSQL      (encrypted document content, AES-256-GCM)
 ```
 
-The gateway exposes three **tools** that the AI can call:
+The gateway exposes four **tools** that the AI can call:
 - `query_database` — read rows from internal tables
-- `search_documents` — full-text search across stored documents
+- `search_documents` — full-text keyword search across stored documents
+- `semantic_search_documents` — semantic vector search across documents (Ollama + pgvector)
 - `list_sources` — discover what data is available
 
 Crucially, **not all callers see the same data**. A `READ_ONLY` key can query employees but never sees salaries. A `CONFIDENTIAL` document is invisible unless you hold an `ADMIN` key.
@@ -104,11 +105,11 @@ data: {"jsonrpc":"2.0","id":1,"result":[...]}
 
 This is the SSE wire format. Each "event" is a small text block ending with a blank line. The client reads chunks as they arrive. This is useful for long-running tool calls that want to stream partial results.
 
-### BCrypt
+### HMAC-SHA256 — API key hashing
 
-BCrypt is a password-hashing algorithm. You never store a raw API key in the database — you store a **hash** of it. When someone presents a key, you hash what they sent and compare to the stored hash.
+You never store a raw API key in the database — you store a **hash** of it. When someone presents a key, you hash what they sent and compare to the stored hash.
 
-BCrypt is deliberately slow (the `12` in `BCryptPasswordEncoder(12)` is the "cost factor" — each increment roughly doubles the time). This makes brute-force attacks impractical.
+This project uses **HMAC-SHA256 with a server-side pepper** (`MCP_HMAC_PEPPER`) rather than BCrypt. API keys are 20+ character random strings with ~128 bits of entropy; BCrypt's slowness adds latency without a security benefit at that entropy level. HMAC-SHA256 is equivalent protection (NIST SP 800-63B) at microsecond cost instead of ~300ms.
 
 ### RBAC — Role-Based Access Control
 
@@ -121,7 +122,8 @@ Every API key has a `role`: either `READ_ONLY` or `ADMIN`. What you can see or d
 | Library / Tool | What it does in this project |
 |---|---|
 | **Spring Boot 3.5** | The application framework. Handles HTTP serving, dependency injection, configuration loading. |
-| **Spring AI (MCP Server WebMVC)** | Adds MCP protocol support on top of Spring MVC. Registers `@Tool`-annotated methods as callable tools and handles the SSE streaming. |
+| **Spring AI 1.1.4 (MCP Server WebMVC)** | Adds MCP protocol support on top of Spring MVC. Registers `@Tool`-annotated methods as callable tools and handles the SSE streaming. Pinned to 1.1.4 — see §8 of ARCHITECTURE.md for why upgrading requires care. |
+| **Ollama + pgvector** | Ollama serves the `nomic-embed-text` embedding model locally. pgvector stores 768-dim float vectors in PostgreSQL. Together they power the `semantic_search_documents` tool. |
 | **Spring Security** | The security framework. Processes filters, manages the security context per request. |
 | **Spring Data JPA + Hibernate** | Maps Java objects to database tables (the `@Entity` classes). Provides repository interfaces for querying. |
 | **PostgreSQL** | The relational database. Stores employees, document metadata, API keys, and audit logs. |
@@ -129,7 +131,7 @@ Every API key has a `role`: either `READ_ONLY` or `ADMIN`. What you can see or d
 | **AES-256-GCM (javax.crypto)** | Content encryption. Document chunk text is encrypted at rest in PostgreSQL using a 256-bit key from `MCP_CONTENT_KEY`. Each chunk gets a fresh 12-byte random IV, prepended to the ciphertext. No external service required. |
 | **Caffeine** | An in-memory cache library. Used to cache the API key list so every request doesn't trigger a database + HMAC round-trip. |
 | **Micrometer** | Metrics library. Counts authentication failures, rate-limit hits, tool calls — exposes them on `/actuator/metrics`. |
-| **Testcontainers** | Starts real Docker containers (PostgreSQL, MinIO) during tests, then tears them down. No mocking of the database. |
+| **Testcontainers** | Starts real Docker containers (PostgreSQL) during tests, then tears them down. No mocking of the database. |
 | **JaCoCo** | Measures test code coverage. Fails the build if coverage drops below 70%. |
 | **SpotBugs + FindSecBugs** | Static analysis. Looks for common bugs and security vulnerabilities in the compiled bytecode. |
 | **OWASP Dependency Check** | Scans your dependencies for known CVEs (security vulnerabilities). Fails the build if a critical one is found. |
@@ -158,19 +160,24 @@ Every API key has a `role`: either `READ_ONLY` or `ADMIN`. What you can see or d
               │     Spring AI MCP Server      │
               │  (handles protocol handshake,  │
               │   session management, SSE)     │
-              └──────┬────────────────────────┘
+              └──────┬────────────────────────────────────────────┘
                      │
-       ┌─────────────┼─────────────┐
-       ▼             ▼             ▼
-DatabaseQueryTool  DocumentSearchTool  SourceListTool
-       │             │                    │
-       ▼             ▼                    │
-PostgresConnector  DbContentStore  PostgresConnector
-       │             │
-       ▼             ▼
-  PostgreSQL       PostgreSQL
-   (data, keys,  (encrypted_content
-    audit logs)   BYTEA, AES-256-GCM)
+   ┌─────────────────┼──────────────────┬────────────────────────┐
+   ▼                 ▼                  ▼                        ▼
+DatabaseQuery   DocumentSearch   SemanticSearch           SourceList
+  Tool            Tool             Tool                    Tool
+   │               │                │
+   ▼               ▼                ▼
+PostgresConnector  DbContentStore  EmbeddingService
+   │               │                │
+   ▼               ▼                ▼
+ PostgreSQL      PostgreSQL       Ollama (nomic-embed-text)
+ (data, keys,  (encrypted_content  │
+  audit logs)   BYTEA, AES-256-GCM) ▼
+                              VectorSearchConnector
+                                    │
+                                    ▼
+                              PostgreSQL (pgvector)
               │
               ▼
          AuditService  ──► audit_logs table (append-only)
@@ -182,8 +189,8 @@ PostgresConnector  DbContentStore  PostgresConnector
 2. **Filters** — `RateLimiterFilter` and `ApiKeyFilter` run before any business logic
 3. **Spring Security** — enforces authorization rules based on the authenticated context
 4. **MCP Server** — Spring AI handles the JSON-RPC protocol, routing `tools/call` to the right Java method
-5. **Tool layer** — `DatabaseQueryTool`, `DocumentSearchTool`, `SourceListTool` — the actual business logic
-6. **Connector layer** — `PostgresConnector` and `MinioConnector` handle data access; they know about roles and safety rules
+5. **Tool layer** — `DatabaseQueryTool`, `DocumentSearchTool`, `SemanticSearchTool`, `SourceListTool` — the actual business logic
+6. **Connector layer** — `PostgresConnector`, `DbContentStore`, `EmbeddingService`, `VectorSearchConnector` handle data access; they know about roles and safety rules
 7. **Audit** — every tool invocation writes an immutable audit log entry asynchronously
 
 ---
@@ -203,7 +210,7 @@ Step 1 — RateLimiterFilter
 Step 2 — ApiKeyFilter
   The filter reads the X-API-Key header. It calls ApiKeyService.authenticate():
     a) Load all API keys from the database (or from the 60-second Caffeine cache)
-    b) For each key, BCrypt-compare the raw header value to the stored hash
+    b) For each key, HMAC-SHA256-compare the raw header value to the stored hash
     c) Also check: is the key revoked? Has it expired?
   If a match is found, the ApiKey object is stored in Spring's SecurityContext
   so downstream code can read it. If not found → 401 Unauthorized.
@@ -270,25 +277,38 @@ mcp-data-gateway/
 │   │   │   └── AuditService.java               ← writes audit entries asynchronously
 │   │   ├── config/
 │   │   │   ├── AsyncConfig.java                ← thread pool for audit writes
-│   │   │   ├── McpConfig.java                  ← MinIO client + tool registration
-│   │   │   ├── PasswordEncoderConfig.java      ← BCrypt bean (strength 12)
+│   │   │   ├── McpConfig.java                  ← explicit tool registration (ToolCallbackProvider)
+│   │   │   ├── McpProtocolVersionConfig.java   ← patches server to advertise protocol 2025-11-25
+│   │   │   ├── OllamaConfig.java               ← Ollama embedding client (nomic-embed-text)
 │   │   │   ├── SecurityConfig.java             ← HTTP security rules
 │   │   │   └── StartupValidationConfig.java    ← enforces TLS in production
 │   │   ├── connector/
-│   │   │   ├── MinioConnector.java             ← fetches document chunks from MinIO
-│   │   │   └── PostgresConnector.java          ← runs role-aware SQL queries
+│   │   │   ├── ContentEncryptor.java           ← AES-256-GCM encrypt/decrypt
+│   │   │   ├── ContentStore.java               ← interface: fetch decrypted chunk text
+│   │   │   ├── DbContentStore.java             ← fetches and decrypts chunks from PostgreSQL
+│   │   │   ├── EmbeddingInitializer.java       ← seeds document chunk embeddings on startup
+│   │   │   ├── EmbeddingService.java           ← generates text embeddings via Ollama
+│   │   │   ├── PostgresConnector.java          ← runs role-aware SQL queries
+│   │   │   └── VectorSearchConnector.java      ← pgvector cosine-similarity search
 │   │   ├── model/
 │   │   │   ├── AccessRole.java                 ← READ_ONLY / ADMIN enum
 │   │   │   ├── ApiKey.java                     ← JPA entity for api_keys table
 │   │   │   └── DataFragment.java               ← what the LLM receives from search
+│   │   ├── oauth/
+│   │   │   ├── AuthCodeStore.java              ← in-memory authorization code store (PKCE)
+│   │   │   ├── JwtTokenService.java            ← issues and verifies Bearer JWTs
+│   │   │   └── OAuthController.java            ← RFC 7591 registration + PKCE authorize/token
 │   │   ├── security/
-│   │   │   ├── ApiKeyFilter.java               ← HTTP filter: validates X-API-Key
+│   │   │   ├── ApiKeyFilter.java               ← HTTP filter: validates X-API-Key or Bearer JWT
 │   │   │   ├── ApiKeyRepository.java           ← loads all keys from the database
-│   │   │   ├── ApiKeyService.java              ← BCrypt matching + Caffeine cache
-│   │   │   └── RateLimiterFilter.java          ← per-IP sliding window
+│   │   │   ├── ApiKeyService.java              ← HMAC-SHA256 matching + Caffeine cache
+│   │   │   ├── HmacApiKeyHasher.java           ← HMAC-SHA256 hashing with server-side pepper
+│   │   │   ├── RateLimiterFilter.java          ← per-IP sliding window
+│   │   │   └── RlsContextAspect.java           ← injects SET LOCAL mcp_role per @Tool call
 │   │   └── tools/
 │   │       ├── DatabaseQueryTool.java          ← MCP tool: query_database
 │   │       ├── DocumentSearchTool.java         ← MCP tool: search_documents
+│   │       ├── SemanticSearchTool.java         ← MCP tool: semantic_search_documents
 │   │       └── SourceListTool.java             ← MCP tool: list_sources
 │   └── resources/
 │       ├── application.yaml                    ← production config
@@ -304,18 +324,36 @@ mcp-data-gateway/
         │   ├── AbstractIntegrationTest.java    ← base class: starts Docker containers
         │   └── TestSecurityHelper.java         ← helper: set SecurityContext for tests
         ├── McpEndToEndIT.java                  ← E2E: full HTTP stack test
+        ├── McpRemoteEndToEndIT.java            ← E2E: against a live OVH deployment
         ├── audit/
         │   ├── AuditLogIT.java                 ← integration: audit rows + immutability
         │   └── AuditServiceTest.java           ← unit: audit event fields + counters
         ├── connector/
-        │   ├── MinioConnectorTest.java         ← unit: chunk fetch + path validation
-        │   └── PostgresConnectorTest.java      ← unit: column filtering + SQL injection
-        └── security/
-            ├── ApiKeyFilterIT.java             ← integration: 401 on missing key
-            ├── ApiKeyLifecycleIT.java          ← integration: expiry + revocation
-            ├── ApiKeyServiceTest.java          ← unit: BCrypt matching + caching
-            ├── RateLimiterFilterIT.java        ← integration: 429 on 61st request
-            └── RateLimiterFilterTest.java      ← unit: sliding window logic
+        │   ├── ContentEncryptorTest.java       ← unit: AES-256-GCM round-trip + tamper
+        │   ├── DbContentStoreTest.java         ← unit: decryption via mock JdbcTemplate
+        │   ├── EmbeddingServiceTest.java       ← unit: Ollama client stub
+        │   ├── PostgresConnectorTest.java      ← unit: column filtering + SQL injection
+        │   └── VectorSearchConnectorTest.java  ← unit: pgvector query construction
+        ├── oauth/
+        │   ├── AuthCodeStoreTest.java          ← unit: PKCE code issuance + expiry
+        │   ├── JwtTokenServiceTest.java        ← unit: JWT sign + verify
+        │   └── OAuthControllerTest.java        ← unit: registration + authorize + token
+        ├── security/
+        │   ├── ApiKeyFilterIT.java             ← integration: 401 on missing key
+        │   ├── ApiKeyLifecycleIT.java          ← integration: expiry + revocation
+        │   ├── ApiKeyServiceTest.java          ← unit: HMAC matching + caching
+        │   ├── HmacApiKeyHasherTest.java       ← unit: round-trip, constant-time, bad pepper
+        │   ├── RateLimiterFilterIT.java        ← integration: 429 on 61st request
+        │   ├── RateLimiterFilterTest.java      ← unit: sliding window logic
+        │   └── RlsContextAspectTest.java       ← unit: SET LOCAL injected per @Tool call
+        └── tools/
+            ├── DatabaseQueryToolIT.java        ← integration: query_database end-to-end
+            ├── DocumentSearchToolIT.java       ← integration: search_documents FTS
+            ├── SemanticSearchRankingIT.java    ← integration: vector ranking correctness
+            ├── SemanticSearchToolHardTest.java ← unit: edge cases, empty vector, errors
+            ├── SemanticSearchToolIT.java       ← integration: semantic_search end-to-end
+            ├── SemanticSearchToolTest.java     ← unit: role filtering, audit call
+            └── SourceListToolIT.java           ← integration: list_sources per role
 ```
 
 ---
@@ -330,7 +368,7 @@ Flyway applies migrations in order at startup. You never touch the database dire
 api_keys
 ┌────────────┬──────────────┬──────────────────────────────────┐
 │ id         │ UUID         │ primary key (auto-generated)     │
-│ key_hash   │ VARCHAR(72)  │ BCrypt hash of the raw API key   │
+│ key_hash   │ VARCHAR(64)  │ HMAC-SHA256 hash of the raw API key   │
 │ label      │ VARCHAR(100) │ human-readable name              │
 │ role       │ VARCHAR(20)  │ 'READ_ONLY' or 'ADMIN'           │
 │ created_at │ TIMESTAMPTZ  │ set automatically on insert      │
@@ -375,7 +413,7 @@ Two important indexes on `document_chunks`:
 ### V2 — seed data (`V2__seed.sql`)
 
 Inserts:
-- Two demo API keys (hashed with BCrypt strength-12)
+- Two demo API keys (hashed with HMAC-SHA256 + pepper)
 - Five employees across departments RH, IT, Finance
 - Five document chunks with classifications PUBLIC, INTERNAL, and CONFIDENTIAL
 
@@ -461,11 +499,11 @@ The `/actuator/health` endpoint is also exempt here — load balancers check it 
 
 ### 8.3 ApiKeyService (`security/ApiKeyService.java`)
 
-The service that does the BCrypt matching.
+The service that does the HMAC-SHA256 matching.
 
 **Cache strategy**: `Caffeine` stores the entire list of API keys for 60 seconds under the key `"all"`. This means:
 - The database is queried at most once every 60 seconds, not on every request.
-- BCrypt matching still happens per request against the cached list.
+- HMAC-SHA256 matching happens per request against the cached list — at microsecond cost per key.
 - If you add/revoke a key, call `invalidateCache()` and the next request will reload.
 
 ```java
@@ -474,12 +512,12 @@ public Optional<ApiKey> authenticate(String rawKey) {
     return keys.stream()
             .filter(key -> !key.isRevoked())
             .filter(key -> key.getExpiresAt() == null || key.getExpiresAt().isAfter(Instant.now()))
-            .filter(key -> encoder.matches(rawKey, key.getKeyHash()))
+            .filter(key -> hasher.matches(rawKey, key.getKeyHash()))
             .findFirst();
 }
 ```
 
-The `.filter(encoder.matches(...))` is the expensive BCrypt step — it happens once per cached key per request. For a small key table (< 100 rows) this is acceptable.
+The `.filter(hasher.matches(...))` computes HMAC-SHA256 and does a constant-time comparison — much faster than BCrypt and safe against timing attacks.
 
 ### 8.4 SecurityConfig (`config/SecurityConfig.java`)
 
@@ -548,7 +586,7 @@ the LLM.
 
 ---
 
-## 9. The three MCP tools
+## 9. The four MCP tools
 
 ### 9.1 DatabaseQueryTool (`tools/DatabaseQueryTool.java`)
 
@@ -628,8 +666,9 @@ Returns a JSON object describing what the current key can access:
       "columns": ["id", "doc_name", "classification", "chunk_index", "text_preview", "created_at"]
     },
     {
-      "name": "documents (MinIO)",
-      "type": "object-storage",
+      "name": "document_chunks.encrypted_content",
+      "type": "encrypted-bytea",
+      "note": "AES-256-GCM encrypted at rest; decrypted in-process by the gateway",
       "accessible_classifications": ["PUBLIC", "INTERNAL"]
     }
   ]
@@ -639,6 +678,49 @@ Returns a JSON object describing what the current key can access:
 An `ADMIN` key would see `salary` in the employees columns and `CONFIDENTIAL` in accessible_classifications.
 
 This tool is important for LLMs: before making a query, the AI can ask `list_sources` to know what tables and columns exist — so it doesn't guess and send invalid queries.
+
+### 9.4 SemanticSearchTool (`tools/SemanticSearchTool.java`)
+
+Exposes: `semantic_search_documents`
+
+```
+Parameters:
+  query      (required) — natural language, max 500 chars
+  maxResults (optional) — 1 to 10, default 5
+```
+
+**What happens:**
+1. Validates query length (rejects > 500 chars).
+2. Reads the caller's role. Builds the classification allowlist:
+   - `READ_ONLY` → `['PUBLIC', 'INTERNAL']`
+   - `ADMIN` → `['PUBLIC', 'INTERNAL', 'CONFIDENTIAL']`
+3. Calls `EmbeddingService.embed(query)` which sends the query to Ollama (`nomic-embed-text`) and returns a 768-dimensional float vector.
+4. Calls `VectorSearchConnector.search(queryVector, allowedClassifications, limit)` which runs:
+   ```sql
+   SELECT id, doc_name, classification, chunk_index
+   FROM document_chunks
+   WHERE classification IN (...)
+   ORDER BY embedding <=> ? LIMIT ?
+   ```
+   The `<=>` operator is pgvector's cosine distance. The index (`ivfflat`) makes this sub-linear.
+5. For each result, fetches and decrypts the chunk text via `ContentStore.fetchChunk(UUID)`.
+6. Wraps each chunk with trust boundary markers (same as `DocumentSearchTool`):
+   ```
+   [EXTERNAL_CONTENT_START]
+   ...actual text...
+   [EXTERNAL_CONTENT_END]
+   ```
+7. Returns a list of `DataFragment` records.
+
+**Semantic vs keyword search:**
+
+`search_documents` (keyword) uses PostgreSQL full-text search — it finds documents containing the exact stemmed words from your query. It works well for specific terms.
+
+`semantic_search_documents` uses vector similarity — it finds documents whose *meaning* is close to your query, even if they don't share vocabulary. Use it when keyword search returns nothing or when querying by concept rather than exact term.
+
+**Role differences:** Identical to `DocumentSearchTool` — `CONFIDENTIAL` documents are hidden from `READ_ONLY` callers.
+
+**Dependency note:** `EmbeddingService` requires Ollama to be running with `nomic-embed-text` pulled. If Ollama is unavailable, the tool throws an exception. In production, `EmbeddingInitializer` pre-seeds embeddings for all existing chunks on startup.
 
 ---
 
@@ -786,14 +868,14 @@ Flyway runs the migrations (`V1`, `V2`, `V3`) against the test PostgreSQL contai
 | Test file | What it tests |
 |---|---|
 | `ApiKeyFilterIT` | HTTP 401 when X-API-Key is missing or wrong. Uses MockMvc to send requests through the filter chain. |
-| `ApiKeyLifecycleIT` | Inserts a test key with BCrypt-4, verifies it works, then sets `expires_at` to the past and verifies it returns 401. Does the same for `revoked=true`. |
+| `ApiKeyLifecycleIT` | Inserts a test key with HMAC-SHA256, verifies it works, then sets `expires_at` to the past and verifies it returns 401. Does the same for `revoked=true`. |
 | `RateLimiterFilterIT` | Sends 60 requests from a unique IP (allowed), then a 61st (blocked as 429). Each test method uses a different fake IP to avoid cross-test state. |
 | `AuditLogIT` | Calls `DatabaseQueryTool` directly (via `TestSecurityHelper` to set the security context), then queries the `audit_logs` table to verify the row was written. Also verifies that trying to delete an audit log row throws an exception (the trigger). |
 
 ### End-to-end test (`McpEndToEndIT`)
 
 Uses `WebTestClient` (Reactor Netty) to make real HTTP requests through the full running application. Exercises the complete MCP protocol handshake and verifies:
-- `tools/list` returns all three tools
+- `tools/list` returns all four tools
 - Missing/invalid API keys return 401
 - `/actuator/health` works without auth
 - `READ_ONLY` cannot see `salary` or `CONFIDENTIAL` documents
@@ -868,7 +950,7 @@ Key values and the pepper are read from environment variables — never from sou
 @Bean
 public ToolCallbackProvider mcpTools(...) {
     return MethodToolCallbackProvider.builder()
-            .toolObjects(databaseQueryTool, documentSearchTool, sourceListTool)
+            .toolObjects(databaseQueryTool, documentSearchTool, semanticSearchTool, sourceListTool)
             .build();
 }
 ```

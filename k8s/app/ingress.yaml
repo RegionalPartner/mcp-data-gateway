@@ -11,22 +11,20 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    # SEC-005/006: security response headers
-    # Requires allow-snippet-annotations: "true" in the nginx-ingress ConfigMap
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-      add_header X-Content-Type-Options "nosniff" always;
-      add_header X-Frame-Options "DENY" always;
-      add_header Referrer-Policy "no-referrer" always;
-      add_header Content-Security-Policy "default-src 'none'" always;
+    # MCP session affinity: Spring AI stores the SSE emitter in JVM heap, making each
+    # MCP session physically bound to one pod. Route all requests from the same client
+    # IP to the same replica to prevent "session not found" failures across replicas.
+    # See docs/ARCHITECTURE.md § "Horizontal scaling and MCP session affinity" for
+    # the full analysis and the long-term mitigation options.
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - mcp.your-domain.com
+        - mcp.37.59.24.118.nip.io
       secretName: mcp-gateway-tls
   rules:
-    - host: mcp.your-domain.com
+    - host: mcp.37.59.24.118.nip.io
       http:
         paths:
           - path: /

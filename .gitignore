@@ -33,5 +33,8 @@ Thumbs.db
 # Personal notes
 NOOB_GUIDE.md
 
-# Stray extracted Spring artifacts (not project source)
+# Stray extracted JAR artifacts (not project source)
 org/
+io/
+META-INF/
+OSGI-INF/

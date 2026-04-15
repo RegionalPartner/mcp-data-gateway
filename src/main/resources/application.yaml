@@ -8,6 +8,12 @@ spring:
         name: mcp-data-gateway
         version: 1.0.0
         protocol: STREAMABLE
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        enabled: false   # RAG-001: embedding only — no chat model needed
+      embedding:
+        model: nomic-embed-text
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
@@ -34,6 +40,9 @@ management:
 
 server:
   port: 8080
+  # SEC-013: unwrap X-Forwarded-For from RFC1918 proxies (nginx-ingress pods are 10.x.x.x)
+  # Without this, RateLimiterFilter sees the nginx pod IP for every client instead of the real IP
+  forward-headers-strategy: native
   error:
     include-message: never      # SEC-012: never expose exception messages to clients
     include-stacktrace: never
@@ -45,6 +54,9 @@ mcp:
     pepper: ${MCP_HMAC_PEPPER}
   content:
     key: ${MCP_CONTENT_KEY}
+  oauth:
+    issuer: ${MCP_OAUTH_ISSUER:https://mcp.37.59.24.118.nip.io}
+    jwt-secret: ${MCP_JWT_SECRET}
 
 logging:
   level:

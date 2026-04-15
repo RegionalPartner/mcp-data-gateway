@@ -24,8 +24,17 @@ java {
 
 dependencyManagement {
     imports {
-        mavenBom("org.springframework.ai:spring-ai-bom:2.0.0-M2")
+        mavenBom("org.springframework.ai:spring-ai-bom:1.1.4")
         mavenBom("org.testcontainers:testcontainers-bom:1.20.4")
+    }
+    dependencies {
+        // MCP SDK 0.17.2 adds ProtocolVersions.MCP_2025_11_25 (required by Claude Code 2.1.x)
+        // while remaining API-compatible with mcp-annotations:0.8.0 used by Spring AI 1.1.4.
+        // (0.18.x removed McpJsonMapper.createDefault(), breaking mcp-annotations:0.8.0)
+        dependency("io.modelcontextprotocol.sdk:mcp:0.17.2")
+        dependency("io.modelcontextprotocol.sdk:mcp-core:0.17.2")
+        dependency("io.modelcontextprotocol.sdk:mcp-json-jackson2:0.17.2")
+        dependency("io.modelcontextprotocol.sdk:mcp-spring-webmvc:0.17.2")
     }
 }
 
@@ -53,6 +62,11 @@ dependencies {
 
     // Spring AI MCP Server (Streamable HTTP via WebMVC)
     implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
+
+    // Spring AI Ollama core — OllamaEmbeddingModel for RAG semantic search (RAG-001)
+    // Using the core module instead of the starter to avoid spring-ai-retry-autoconfigure,
+    // which requires org.springframework.core.retry.RetryListener (Spring 7+, not in Boot 3.5)
+    implementation("org.springframework.ai:spring-ai-ollama")
 
     // Database
     runtimeOnly("org.postgresql:postgresql:42.7.3")

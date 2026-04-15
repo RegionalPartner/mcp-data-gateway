@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: up down open status logs help
+.PHONY: up down open status logs help _validate-image _ingress _ingress-ip
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TFDIR      := infra/terraform
@@ -8,6 +8,12 @@ K          := KUBECONFIG=$(KUBECONFIG) kubectl
 H          := KUBECONFIG=$(KUBECONFIG) helm
 NS         := mcp-demo
 ENV_FILE   := .deploy.env
+GIT_REMOTE  := $(shell git config --get remote.origin.url 2>/dev/null)
+DOMAIN      := $(shell grep -m1 '^\s*- host:' k8s/app/ingress.yaml | awk '{print $$3}' 2>/dev/null)
+GITHUB_OWNER := $(shell printf '%s\n' "$(GIT_REMOTE)" | sed -nE 's#(git@|https://)github.com[:/]([^/]+)/.*#\2#p' | tr '[:upper:]' '[:lower:]')
+IMAGE_REPO ?= $(if $(GITHUB_OWNER),ghcr.io/$(GITHUB_OWNER)/mcp-data-gateway,)
+IMAGE_TAG  ?= develop
+IMAGE      ?= $(IMAGE_REPO):$(IMAGE_TAG)
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 G := \033[0;32m
@@ -23,15 +29,20 @@ help:
 	@echo "  make status  Show pod and service status"
 	@echo "  make logs    Tail gateway logs"
 	@echo ""
+	@echo "  App image defaults to IMAGE=$(IMAGE)"
+	@echo "  Override with: make up IMAGE_REPO=ghcr.io/<owner>/mcp-data-gateway IMAGE_TAG=develop"
+	@echo ""
+	@echo "  Ingress domain read from k8s/app/ingress.yaml — set your domain + email first."
 	@echo "  Secrets are auto-generated on first 'make up' and saved to $(ENV_FILE)."
 	@echo "  Keep that file safe — loss of MCP_CONTENT_KEY = encrypted data unrecoverable."
 	@echo ""
 
 # ── Main targets ──────────────────────────────────────────────────────────────
 
-up: _tf-apply _kubeconfig _secrets _postgresql _app _smoke
+up: _validate-image _tf-apply _kubeconfig _secrets _postgresql _app _smoke
 	@echo -e "$(G)✓ Cluster is up.$(N)"
-	@echo -e "  Run  make open  to access the gateway at http://localhost:8080"
+	@echo -e "  Local:   make open → http://localhost:8080/mcp"
+	@echo -e "  Public:  make _ingress  (once you have a domain set in k8s/app/ingress.yaml)"
 
 down:
 	@echo -e "$(Y)Destroying cluster — all Kubernetes data will be lost.$(N)"
@@ -43,6 +54,7 @@ down:
 open:
 	@echo -e "$(G)Gateway:$(N) http://localhost:8080/mcp"
 	@echo -e "$(G)Health: $(N) http://localhost:8080/actuator/health"
+	@[ -n "$(DOMAIN)" ] && echo -e "$(G)Public: $(N) https://$(DOMAIN)/mcp" || true
 	@echo    "  Ctrl+C to stop."
 	$(K) port-forward svc/mcp-gateway 8080:80 -n $(NS)
 
@@ -54,12 +66,26 @@ logs:
 
 # ── Internal steps ────────────────────────────────────────────────────────────
 
+
+_validate-image:
+	@if [ -z "$(IMAGE_REPO)" ] || [ -z "$(IMAGE_TAG)" ] || [ -z "$(IMAGE)" ]; then \
+	  echo "Error: unable to determine the app image."; \
+	  echo "Set IMAGE_REPO=ghcr.io/<owner>/mcp-data-gateway and optionally IMAGE_TAG=<tag>."; \
+	  exit 1; \
+	fi
+	@if [[ "$(IMAGE)" == *YOUR_REGISTRY* ]] || [[ "$(IMAGE)" == ghcr.io//:* ]]; then \
+	  echo "Error: invalid IMAGE='$(IMAGE)'."; \
+	  echo "Set IMAGE_REPO=ghcr.io/<owner>/mcp-data-gateway and optionally IMAGE_TAG=<tag>."; \
+	  exit 1; \
+	fi
+	@echo -e "$(G)Using app image:$(N) $(IMAGE)"
+
 _tf-apply:
-	@echo -e "$(G)▶ 1/5 Provisioning OVH cluster...$(N)"
+	@echo -e "$(G)▶ 1/6 Provisioning OVH cluster...$(N)"
 	cd $(TFDIR) && terraform init -input=false && terraform apply -auto-approve
 
 _kubeconfig:
-	@echo -e "$(G)▶ 2/5 Fetching kubeconfig...$(N)"
+	@echo -e "$(G)▶ 2/6 Fetching kubeconfig...$(N)"
 	@mkdir -p $(HOME)/.kube
 	cd $(TFDIR) && terraform output -raw kubeconfig > $(KUBECONFIG)
 	@chmod 600 $(KUBECONFIG)
@@ -67,7 +93,7 @@ _kubeconfig:
 	$(K) wait node --all --for=condition=Ready --timeout=300s
 
 _secrets:
-	@echo -e "$(G)▶ 3/5 Secrets...$(N)"
+	@echo -e "$(G)▶ 3/6 Secrets...$(N)"
 	@if [ ! -f $(ENV_FILE) ]; then \
 	  printf 'PG_PASSWORD=%s\nMCP_HMAC_PEPPER=%s\nMCP_CONTENT_KEY=%s\n' \
 	    "$$(openssl rand -hex 24)" \
@@ -90,7 +116,7 @@ _secrets:
 	    --dry-run=client -o yaml | $(K) apply -f -
 
 _postgresql:
-	@echo -e "$(G)▶ 4/5 Installing PostgreSQL...$(N)"
+	@echo -e "$(G)▶ 4/6 Installing PostgreSQL...$(N)"
 	@set -a; source $(ENV_FILE); set +a; \
 	  $(H) upgrade --install postgresql \
 	    oci://registry-1.docker.io/bitnamicharts/postgresql \
@@ -99,8 +125,55 @@ _postgresql:
 	    --namespace $(NS) --create-namespace \
 	    --wait --timeout 5m
 
+_ingress:
+	@if grep -qE 'your-domain\.com|your-email@example' k8s/app/ingress.yaml k8s/app/cert-manager-issuer.yaml; then \
+	  echo -e "$(Y)Skipping ingress — placeholders still present.$(N)"; \
+	  echo "  → Set your domain in k8s/app/ingress.yaml"; \
+	  echo "  → Set your email in k8s/app/cert-manager-issuer.yaml"; \
+	  echo "  Then run: make _ingress"; \
+	  exit 0; \
+	fi
+	@echo -e "$(G)▶ Installing ingress + TLS...$(N)"
+	@# allow-snippet-annotations required for configuration-snippet security headers (nginx-ingress v1.x+)
+	@# use-forwarded-headers passes real client IP to app (fixes rate limiter behind proxy)
+	$(H) upgrade --install ingress-nginx ingress-nginx \
+	  --repo https://kubernetes.github.io/ingress-nginx \
+	  --namespace ingress-nginx --create-namespace \
+	  --set controller.config.use-forwarded-headers=true \
+	  --set controller.config.compute-full-forwarded-for=true \
+	  --wait --timeout 5m
+	$(H) upgrade --install cert-manager cert-manager \
+	  --repo https://charts.jetstack.io \
+	  --namespace cert-manager --create-namespace \
+	  --set crds.enabled=true \
+	  --wait --timeout 5m
+	$(K) apply -f k8s/app/cert-manager-issuer.yaml
+	$(K) apply -f k8s/app/ingress.yaml
+	@echo -e "$(G)  Ingress ready. Public: https://$(DOMAIN)/mcp$(N)"
+	@$(K) wait certificate mcp-gateway-tls -n $(NS) --for=condition=Ready --timeout=120s \
+	  && echo -e "$(G)  TLS certificate issued.$(N)" \
+	  || echo -e "$(Y)  TLS cert pending — DNS may need time. Check: kubectl describe certificate -n $(NS)$(N)"
+
+_ingress-ip:
+	@echo -e "$(G)▶ Installing nginx-ingress (LoadBalancer)...$(N)"
+	$(H) upgrade --install ingress-nginx ingress-nginx \
+	  --repo https://kubernetes.github.io/ingress-nginx \
+	  --namespace ingress-nginx --create-namespace \
+	  --set controller.config.use-forwarded-headers=true \
+	  --set controller.config.compute-full-forwarded-for=true \
+	  --wait --timeout 5m
+	@echo -e "$(G)▶ Waiting for LoadBalancer IP...$(N)"
+	@$(K) wait --namespace ingress-nginx \
+	  --for=jsonpath='{.status.loadBalancer.ingress[0].ip}' \
+	  service/ingress-nginx-controller --timeout=120s
+	@IP=$$($(K) get svc ingress-nginx-controller -n ingress-nginx \
+	  -o jsonpath='{.status.loadBalancer.ingress[0].ip}'); \
+	  echo -e "$(G)  LoadBalancer IP: $$IP$(N)"; \
+	  echo -e "  → nip.io domain:  mcp.$$IP.nip.io"; \
+	  echo -e "  → Next: edit k8s/app/ingress.yaml + cert-manager-issuer.yaml, then: make _ingress"
+
 _app:
-	@echo -e "$(G)▶ 5/5 Deploying gateway...$(N)"
+	@echo -e "$(G)▶ 5/6 Deploying gateway...$(N)"
 	$(K) apply -f k8s/app/namespace.yaml
 	$(K) apply -f k8s/app/serviceaccount.yaml
 	$(K) apply -f k8s/app/networkpolicy.yaml
@@ -110,6 +183,7 @@ _app:
 	  --from-literal=spring-profiles-active=prod \
 	  --dry-run=client -o yaml | $(K) apply -f -
 	$(K) apply -f k8s/app/deployment.yaml
+	$(K) set image deployment/mcp-gateway mcp-gateway=$(IMAGE) -n $(NS)
 	@# In-cluster PostgreSQL has no TLS — disable the enforce-tls startup check
 	$(K) set env deployment/mcp-gateway MCP_SECURITY_ENFORCE_TLS=false -n $(NS)
 	$(K) rollout status deployment/mcp-gateway -n $(NS) --timeout=120s
@@ -117,9 +191,7 @@ _app:
 _smoke:
 	@echo -e "$(G)▶ Smoke test...$(N)"
 	@sleep 5
-	@$(K) run smoke --image=curlimages/curl:8.6.0 \
-	  --restart=Never --rm --attach \
-	  --namespace=$(NS) \
-	  -- curl -sf http://mcp-gateway/actuator/health \
+	@POD=$$($(K) get pod -n $(NS) -l app=mcp-gateway -o jsonpath='{.items[0].metadata.name}') && \
+	  $(K) exec -n $(NS) $$POD -- wget -qO- http://localhost:8080/actuator/health \
 	  && echo -e "$(G)✓ Health check passed$(N)" \
 	  || echo -e "$(Y)⚠ Health check failed — check: make logs$(N)"

@@ -30,12 +30,14 @@ public class DbContentStore implements ContentStore {
     @Override
     public String fetchChunk(UUID chunkId) {
         try {
-            byte[] encrypted = jdbc.queryForObject(
-                    "SELECT encrypted_content FROM document_chunks WHERE id = ?",
-                    byte[].class, chunkId);
+            var row = jdbc.queryForMap(
+                    "SELECT encrypted_content, text_preview FROM document_chunks WHERE id = ?", chunkId);
+            byte[] encrypted = (byte[]) row.get("encrypted_content");
             if (encrypted == null) {
-                log.debug("No encrypted_content for chunk id={}", chunkId);
-                return "";
+                // Fall back to text_preview for unencrypted demo/seed data
+                log.debug("No encrypted_content for chunk id={}, falling back to text_preview", chunkId);
+                String preview = (String) row.get("text_preview");
+                return preview != null ? preview : "";
             }
             String text = contentEncryptor.decrypt(encrypted);
             return text.length() > MAX_FRAGMENT_CHARS ? text.substring(0, MAX_FRAGMENT_CHARS) : text;

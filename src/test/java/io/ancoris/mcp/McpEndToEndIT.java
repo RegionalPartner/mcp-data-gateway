@@ -2,10 +2,12 @@ package io.ancoris.mcp;
 
 import io.ancoris.mcp.connector.ContentEncryptor;
 import io.ancoris.mcp.integration.AbstractIntegrationTest;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,8 +17,12 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 /**
  * End-to-end test: exercises the full HTTP stack as a real LLM client would.
@@ -43,6 +49,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * closes the stream prematurely). Reactor Netty handles chunked SSE correctly.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+// NOTE: @TestPropertySource establishes the same Spring context key as McpRemoteEndToEndIT,
+// isolating both from RateLimiterFilterIT which overrides max-requests=60. The value 300
+// is redundant with application-test.yaml — this annotation exists for context-key isolation.
+@TestPropertySource(properties = "mcp.security.rate-limit.max-requests=300")
 class McpEndToEndIT extends AbstractIntegrationTest {
 
     // Must match McpServerStreamableHttpProperties default (spring.ai.mcp.server.protocol: STREAMABLE)
@@ -50,6 +60,12 @@ class McpEndToEndIT extends AbstractIntegrationTest {
 
     private static final String READ_ONLY_KEY = "demo-readonly-key-001";
     private static final String ADMIN_KEY = "demo-admin-key-001";
+
+    private static final float[] SEMANTIC_VECTOR = new float[768];
+
+    static {
+        Arrays.fill(SEMANTIC_VECTOR, 0.1f);
+    }
 
     @Autowired
     private WebTestClient webTestClient;
@@ -63,6 +79,9 @@ class McpEndToEndIT extends AbstractIntegrationTest {
     /** Shared MCP session established once for the class. */
     private String sessionId;
 
+    private UUID semanticChunkId;
+    private UUID confidentialSemanticChunkId;
+
     // -----------------------------------------------------------------------
     // Setup: encrypted DB fixtures + MCP session handshake
     // -----------------------------------------------------------------------
@@ -74,7 +93,18 @@ class McpEndToEndIT extends AbstractIntegrationTest {
                 .build();
 
         populateEncryptedContent();
+        insertSemanticChunk();
         initializeMcpSession();
+    }
+
+    @AfterAll
+    void tearDownAll() {
+        if (semanticChunkId != null) {
+            jdbc.update("DELETE FROM document_chunks WHERE id = ?", semanticChunkId);
+        }
+        if (confidentialSemanticChunkId != null) {
+            jdbc.update("DELETE FROM document_chunks WHERE id = ?", confidentialSemanticChunkId);
+        }
     }
 
     private void populateEncryptedContent() {
@@ -88,6 +118,33 @@ class McpEndToEndIT extends AbstractIntegrationTest {
                 "La politique RH version 3 définit les procédures de recrutement et d'évaluation des compétences.");
         encryptAndStore("note-technique-securite-chunk-00.json",
                 "Cette note technique décrit les bonnes pratiques de sécurité informatique applicables à tous les agents.");
+    }
+
+    private void insertSemanticChunk() {
+        semanticChunkId = UUID.randomUUID();
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < SEMANTIC_VECTOR.length; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append(SEMANTIC_VECTOR[i]);
+        }
+        sb.append(']');
+        jdbc.update("""
+                INSERT INTO document_chunks
+                    (id, doc_name, classification, chunk_index, text_preview, embedding)
+                VALUES (?, 'e2e-semantic-test-doc', 'PUBLIC', 0,
+                        'e2e semantic search public content', ?::vector)
+                """, semanticChunkId, sb.toString());
+
+        // CONFIDENTIAL chunk — needed by semanticSearch_asAdmin_confidentialChunkVisible()
+        confidentialSemanticChunkId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO document_chunks
+                    (id, doc_name, classification, chunk_index, text_preview, embedding)
+                VALUES (?, 'e2e-confidential-semantic-doc', 'CONFIDENTIAL', 0,
+                        'e2e confidential semantic unique marker text', ?::vector)
+                """, confidentialSemanticChunkId, sb.toString());
     }
 
     private void encryptAndStore(String minioKeyFragment, String text) {
@@ -120,12 +177,28 @@ class McpEndToEndIT extends AbstractIntegrationTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void toolsList_validKey_returnsAllThreeTools() {
+    void toolsList_validKey_returnsAllFourTools() {
         String body = call(READ_ONLY_KEY, toolsList()).getBody();
 
         assertThat(body).contains("query_database");
         assertThat(body).contains("search_documents");
         assertThat(body).contains("list_sources");
+        assertThat(body).contains("semantic_search_documents");
+    }
+
+    // -----------------------------------------------------------------------
+    // Semantic search (RAG): public chunk returned via full HTTP stack
+    // -----------------------------------------------------------------------
+
+    @Test
+    void semanticSearch_e2e_returnsPublicChunk() {
+        when(embeddingModel.embed(anyString())).thenReturn(SEMANTIC_VECTOR);
+
+        String body = call(READ_ONLY_KEY,
+                toolCall("semantic_search_documents", "{\"query\":\"semantic search\",\"maxResults\":10}"))
+                .getBody();
+
+        assertThat(body).contains("e2e semantic search public content");
     }
 
     // -----------------------------------------------------------------------
@@ -277,6 +350,64 @@ class McpEndToEndIT extends AbstractIntegrationTest {
 
         assertThat(body).doesNotContain("at io.ancoris");
         assertThat(body).doesNotContain("Exception");
+    }
+
+    // -----------------------------------------------------------------------
+    // Semantic search: 501-char query must produce an error response, not
+    // an unhandled HTTP 500 or a silent success. The MCP framework wraps
+    // IllegalArgumentException into a JSON-RPC error object (HTTP 200 body).
+    // -----------------------------------------------------------------------
+
+    @Test
+    void semanticSearch_queryTooLong_returnsErrorNotHttp500() {
+        String tooLong = "q".repeat(501);
+        ResponseEntity<String> resp = call(READ_ONLY_KEY,
+                toolCall("semantic_search_documents",
+                        "{\"query\":\"" + tooLong + "\",\"maxResults\":5}"));
+
+        assertThat(resp.getStatusCode().value())
+                .as("oversized query must not produce HTTP 500")
+                .isNotEqualTo(500);
+        assertThat(resp.getBody())
+                .as("error response must not leak stack traces")
+                .doesNotContain("Exception")
+                .doesNotContain("at io.ancoris");
+    }
+
+    // -----------------------------------------------------------------------
+    // Semantic search: ADMIN must see CONFIDENTIAL chunks in results.
+    // Only READ_ONLY was tested in the existing E2E test.
+    // -----------------------------------------------------------------------
+
+    @Test
+    void semanticSearch_asAdmin_confidentialChunkVisible() {
+        when(embeddingModel.embed(anyString())).thenReturn(SEMANTIC_VECTOR);
+
+        String body = call(ADMIN_KEY,
+                toolCall("semantic_search_documents",
+                        "{\"query\":\"confidential semantic test\",\"maxResults\":10}"))
+                .getBody();
+
+        // text_preview is returned as-is (no encrypted_content set for test fixtures)
+        assertThat(body).contains("e2e confidential semantic unique marker text");
+    }
+
+    // -----------------------------------------------------------------------
+    // Semantic search: SEC-017 trust boundary markers must appear in the raw
+    // SSE response that reaches the LLM. Verifies the E2E transport does not
+    // strip or modify the DataFragment.fragmentText content.
+    // -----------------------------------------------------------------------
+
+    @Test
+    void semanticSearch_trustBoundaryMarkersPresent() {
+        when(embeddingModel.embed(anyString())).thenReturn(SEMANTIC_VECTOR);
+
+        String body = call(READ_ONLY_KEY,
+                toolCall("semantic_search_documents",
+                        "{\"query\":\"semantic search\",\"maxResults\":10}"))
+                .getBody();
+
+        assertThat(body).contains("[EXTERNAL_CONTENT_START]");
     }
 
     // -----------------------------------------------------------------------

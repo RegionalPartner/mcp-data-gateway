@@ -18,6 +18,7 @@ class RateLimiterFilterTest {
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         filter = new RateLimiterFilter(meterRegistry);
+        filter.maxRequestsPerWindow = 60;  // field is package-private; mirrors production default
     }
 
     // -----------------------------------------------------------------------

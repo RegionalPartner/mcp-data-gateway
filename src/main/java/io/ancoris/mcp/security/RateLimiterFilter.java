@@ -8,6 +8,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.security.SecurityProperties;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
@@ -22,14 +23,18 @@ import java.util.concurrent.TimeUnit;
  * Runs at order DEFAULT_FILTER_ORDER-1 (just before Spring Security) so it applies
  * to all requests including unauthenticated probes.
  *
- * Limit: 60 requests per 60-second window per remote IP.
- * Exceeding the limit returns HTTP 429 and increments mcp.rate.limit.exceeded counter.
+ * Limit: {@code mcp.security.rate-limit.max-requests} requests per 60-second window per IP
+ * (default 60; override in {@code application-test.yaml} for tests to prevent cross-class
+ * context pollution). Exceeding the limit returns HTTP 429.
  */
 @Component
 @Order(SecurityProperties.DEFAULT_FILTER_ORDER - 1)
 public class RateLimiterFilter extends OncePerRequestFilter {
 
-    private static final int MAX_REQUESTS_PER_WINDOW = 60;
+    /** Overridable via {@code mcp.security.rate-limit.max-requests}. */
+    @Value("${mcp.security.rate-limit.max-requests:60}")
+    int maxRequestsPerWindow;
+
     private static final long WINDOW_MILLIS = 60_000L;
 
     private final Cache<String, ArrayDeque<Long>> requestLog;
@@ -59,7 +64,7 @@ public class RateLimiterFilter extends OncePerRequestFilter {
             while (!times.isEmpty() && times.peekFirst() < cutoff) {
                 times.pollFirst();
             }
-            if (times.size() >= MAX_REQUESTS_PER_WINDOW) {
+            if (times.size() >= maxRequestsPerWindow) {
                 rateLimitCounter.increment();
                 response.setStatus(429);
                 response.setContentType(MediaType.APPLICATION_JSON_VALUE);
@@ -75,5 +80,10 @@ public class RateLimiterFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // Kubernetes liveness/readiness probes must never be throttled
         return request.getRequestURI().startsWith("/actuator/health");
+    }
+
+    /** Resets all per-IP counters. Called by test setup to prevent cross-class pollution. */
+    public void clearRequestLog() {
+        requestLog.invalidateAll();
     }
 }
