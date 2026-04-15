@@ -33,7 +33,7 @@ public class RateLimiterFilter extends OncePerRequestFilter {
 
     /** Overridable via {@code mcp.security.rate-limit.max-requests}. */
     @Value("${mcp.security.rate-limit.max-requests:60}")
-    int maxRequestsPerWindow;
+    public int maxRequestsPerWindow;
 
     private static final long WINDOW_MILLIS = 60_000L;
 
