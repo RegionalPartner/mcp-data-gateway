@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -190,6 +191,7 @@ public class OAuthController {
         String code = authCodeStore.issue(
                 key.getKeyHash(), key.getRole(), redirectUri, codeChallenge, codeChallengeMethod);
         String location = redirectUri + "?code=" + code
+                + "&iss=" + URLEncoder.encode(issuer, StandardCharsets.UTF_8)
                 + (state.isBlank() ? "" : "&state=" + state);
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create(location))
