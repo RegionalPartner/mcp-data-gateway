@@ -61,16 +61,6 @@ public class OAuthController {
             .maximumSize(50)
             .build();
 
-    /**
-     * Stores client_secret values issued by Dynamic Client Registration, keyed by client_id.
-     * Required for confidential-client flows (e.g. Mistral Le Chat) where the OAuth callback
-     * handler performs the token exchange server-to-server using client_secret_post auth
-     * rather than a PKCE code_verifier.
-     */
-    private final Cache<String, String> clientSecrets = Caffeine.newBuilder()
-            .expireAfterWrite(30, TimeUnit.MINUTES)
-            .maximumSize(100)
-            .build();
 
     private record AuthorizeParams(String responseType, String clientId, String redirectUri,
                                     String codeChallenge, String codeChallengeMethod, String state) { }
@@ -119,8 +109,7 @@ public class OAuthController {
     @ResponseBody
     public ResponseEntity<Map<String, Object>> register(@RequestBody Map<String, Object> request) {
         String clientId = UUID.randomUUID().toString();
-        String clientSecret = UUID.randomUUID().toString();
-        clientSecrets.put(clientId, clientSecret);
+        String clientSecret = jwtTokenService.deriveClientSecret(clientId);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("client_id", clientId);
         response.put("client_id_issued_at", Instant.now().getEpochSecond());
@@ -252,7 +241,7 @@ public class OAuthController {
         boolean pkceOk = codeVerifier != null && !codeVerifier.isBlank()
                 && verifyPkce(codeVerifier, entry.codeChallenge());
         boolean secretOk = clientId != null && clientSecret != null
-                && clientSecret.equals(clientSecrets.getIfPresent(clientId));
+                && clientSecret.equals(jwtTokenService.deriveClientSecret(clientId));
         if (!pkceOk && !secretOk) {
             return ResponseEntity.badRequest().body(Map.of("error", "invalid_grant"));
         }

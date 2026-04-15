@@ -41,6 +41,20 @@ public class JwtTokenService {
         this.secret = jwtSecret.getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * Derives a deterministic client_secret for a given client_id using HMAC-SHA256.
+     *
+     * <p>This is stateless — no storage required. The secret survives pod restarts because
+     * it is derived from the stable {@code mcp.oauth.jwt-secret}. Confidential OAuth clients
+     * (e.g. Mistral Le Chat) receive this value at DCR time and present it back at the token
+     * endpoint; we re-derive and compare rather than looking up a stored value.
+     */
+    public String deriveClientSecret(String clientId) {
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(hmacSha256(("client-secret:" + clientId)
+                        .getBytes(StandardCharsets.UTF_8)));
+    }
+
     /** Issues a 1-hour JWT for the given key hash and role. */
     public String issue(String keyHash, AccessRole role) {
         long now = Instant.now().getEpochSecond();
