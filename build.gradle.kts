@@ -69,7 +69,7 @@ dependencies {
     implementation("org.springframework.ai:spring-ai-ollama")
 
     // Database
-    runtimeOnly("org.postgresql:postgresql:42.7.3")
+    runtimeOnly("org.postgresql:postgresql:42.7.10")
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
 
