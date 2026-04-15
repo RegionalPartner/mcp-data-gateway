@@ -80,7 +80,7 @@ dependencies {
     implementation("com.github.ben-manes.caffeine:caffeine")
 
     // SpotBugs security plugin
-    spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.12.0")
+    spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0")
 
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
