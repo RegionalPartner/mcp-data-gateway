@@ -8,6 +8,8 @@ spring:
 mcp:
   security:
     enforce-tls: false  # Testcontainers uses plain HTTP — TLS validation disabled
+    rate-limit:
+      max-requests: 300  # Raised for test contexts; RateLimiterFilterIT overrides back to 60
   hmac:
     pepper: test-pepper-32-chars-minimum-000
   content:
