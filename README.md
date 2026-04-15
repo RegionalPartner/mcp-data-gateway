@@ -23,6 +23,7 @@ The data ingestion side is intentionally not part of this release — structurin
 
 - [Live demo](#live-demo)
 - [What it does](#what-it-does)
+- [For IT & security leadership](#for-it--security-leadership)
 - [Security model](#security-model)
 - [Stack](#stack)
 - [Quickstart](#quickstart-local)
@@ -74,6 +75,45 @@ Four MCP tools, exposed over OAuth 2.0 PKCE (streamable HTTP transport):
 | `semantic_search_documents` | Vector similarity search (pgvector + Ollama) — finds conceptually related content even without exact keyword matches |
 
 Every tool call is written to an immutable audit log.
+
+---
+
+## For IT & security leadership
+
+The gateway is not a cloud storage service. It does not copy, replicate, or host your data. **It is an access control layer** — it manages which fragments of your existing data can be shared with an LLM, and under what conditions.
+
+### What happens when you connect an existing data source
+
+Take a Microsoft 365 tenant as a concrete example. Your tenant stays exactly where it is — SharePoint, Exchange, and Teams data remain in Microsoft's infrastructure, under your existing licences and governance policies.
+
+What the gateway adds is a controlled ingestion step and a query interface:
+
+| Step | What happens | What the gateway stores |
+|------|-------------|------------------------|
+| You select sources | A SharePoint library, a shared mailbox, a Teams channel | Nothing yet |
+| Ingestion runs | Documents are extracted → split into text chunks → vectorised by a local model (Ollama) | Text chunks + vector embeddings only — never the original file |
+| Classification is assigned | Each chunk is tagged PUBLIC, INTERNAL, or CONFIDENTIAL by your policy | Classification metadata |
+| LLM sends a query | The AI sends a question to the gateway | Nothing — the request is transient |
+| Gateway filters and responds | Only chunks the caller's role is allowed to see are returned | The query is written to the audit log |
+
+**The LLM never connects to your M365 tenant.** It sends a question to the gateway; the gateway returns filtered text fragments. No SharePoint credentials, no Exchange tokens, no raw files are ever exposed to the AI model.
+
+### What the gateway does not do
+
+- Does not store raw files (PDF, DOCX, email attachments, images, videos)
+- Does not index your entire tenant — only sources you explicitly configure
+- Does not give the LLM access to personal mailboxes, calendar data, or personal OneDrive unless you explicitly add them as a source
+- Does not send any data to external AI APIs — the embedding model (Ollama) runs locally on your infrastructure
+
+### What this means in practice
+
+| Concern | How the gateway addresses it |
+|---------|------------------------------|
+| Data sovereignty | All data stays in your infrastructure — PostgreSQL and Ollama run in your cluster |
+| Perimeter control | You define every source explicitly — nothing is ingested by default |
+| Access segmentation | READ_ONLY and ADMIN roles control what each AI user can query |
+| Auditability | Every query is logged with the key, tool called, and result summary |
+| GDPR / classification | PUBLIC / INTERNAL / CONFIDENTIAL tiers map directly to your information security policy |
 
 ---
 
