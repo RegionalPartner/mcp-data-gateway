@@ -9,7 +9,7 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
     id("jacoco")
     id("checkstyle")
-    id("com.github.spotbugs") version "6.0.9"
+    id("com.github.spotbugs") version "6.5.0"
     id("org.owasp.dependencycheck") version "9.2.0"
 }
 
