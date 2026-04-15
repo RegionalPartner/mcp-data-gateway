@@ -1,24 +1,24 @@
-# MCP Data Gateway — Getting Started with Claude Code
+# MCP Data Gateway — Getting Started
 
-This guide is for colleagues who want to connect Claude Code to the internal data gateway.
+A step-by-step guide to connecting Claude Code to the live demo gateway.
 No technical background required.
+
+🇬🇧 English | [🇫🇷 Français](GETTING_STARTED.fr.md)
 
 ---
 
-## Before you start — a note on API keys
+## Before you start — demo keys
 
-The gateway uses **API keys** to control access. Two demo keys ship with the codebase:
+The gateway uses API keys to control access. Two demo keys are available:
 
 | Key | Access level |
 |-----|-------------|
-| `demo-readonly-key-001` | Employees (no salaries), public and internal documents |
-| `demo-admin-key-001` | Everything, including salaries and confidential documents |
+| `demo-readonly-key-001` | Employees (no salaries), PUBLIC + INTERNAL documents |
+| `demo-admin-key-001` | Everything, including salaries and CONFIDENTIAL documents |
 
-> **Security notice:** these key values appear in the public GitHub repository.
-> Anyone who finds the repo can use them to authenticate to the live gateway.
-> If you are running the gateway for anything beyond a closed internal demo,
-> ask the administrator to create a personal key for you (see the admin at the
-> bottom of this page) and rotate or disable the demo keys.
+> These keys are public — anyone with this guide can use them.
+> They are intended for demonstration only.
+> Contact [Ancoris](https://www.ancoris.fr) if you need a private key for your organisation.
 
 ---
 
@@ -30,95 +30,71 @@ If you do not have Claude Code yet:
 - **VS Code / JetBrains:** install the Claude Code extension from the marketplace
 - **Terminal:** `npm install -g @anthropic-ai/claude-code` (requires Node.js 18+)
 
-Open a terminal (or the built-in terminal in your IDE) and run `claude` to check it works.
+Open a terminal and run `claude` to confirm it works.
 
 ---
 
 ## Step 2 — Add the MCP server
 
-In your Claude Code terminal, run:
+Run this command once in your terminal:
 
-```
-/mcp
-```
-
-Select **Add server**, choose **HTTP**, and enter:
-
-```
-Name:  mcp-data-gateway
-URL:   https://mcp.37.59.24.118.nip.io/mcp
+```bash
+claude mcp add mcp-data-gateway --transport http https://mcp.37.59.24.118.nip.io/mcp
 ```
 
-Alternatively, edit `~/.claude.json` directly and add this entry inside the
-`"mcpServers"` section (create it if it does not exist):
+Then start Claude Code:
 
-```json
-"mcpServers": {
-  "mcp-data-gateway": {
-    "type": "http",
-    "url": "https://mcp.37.59.24.118.nip.io/mcp"
-  }
-}
+```bash
+claude
 ```
-
-Save the file and restart Claude Code.
 
 ---
 
 ## Step 3 — Authenticate
 
-The first time Claude Code connects to the gateway it will open a **browser window**
-asking for your API key.
+The first time Claude Code connects it will open a **browser window** asking for your API key.
 
-1. Claude Code opens your browser automatically — you will see a page titled
-   **"MCP Data Gateway — Authenticate"**
-2. Enter one of the API keys from the table above
+1. A page titled **"MCP Data Gateway — Authenticate"** opens automatically
+2. Enter one of the demo keys from the table above
 3. Click **Authorise**
-4. The browser shows a success message and closes
+4. The browser shows a success message
 5. Claude Code status changes to **✔ connected**
 
-If the browser does not open automatically, run `/mcp` and select **Re-authenticate**.
+If the browser does not open, run `/mcp` inside Claude Code and select **Re-authenticate**.
 
-Your authentication token is stored locally and lasts **one hour**. After it expires,
-Claude Code will ask you to re-authenticate.
+Your token lasts **one hour**. After expiry, Claude Code will prompt you to re-authenticate.
 
 ---
 
 ## Step 4 — Try it
 
-Once connected, the gateway tools appear automatically inside Claude Code. Just type
-naturally — Claude uses the tools on your behalf.
-
-### Starter prompts
+Once connected, just type naturally — Claude uses the gateway tools on your behalf.
 
 **Get oriented:**
 ```
-What data is available in the MCP gateway, and what am I allowed to see?
+What data is available in the gateway, and what am I allowed to see?
 ```
 
 **Browse employees:**
 ```
 List all employees and their departments.
 ```
-
 ```
 Who works in the IT department?
 ```
 
-**Search documents (keyword):**
+**Search documents:**
 ```
 Find documents mentioning digital infrastructure investment.
 ```
-
 ```
 Are there any documents about information security best practices?
 ```
 
-**Semantic search — finds related ideas even without exact keywords:**
+**Semantic search** — finds related ideas even without exact keywords:
 ```
 Search for content related to energy efficiency and datacentres.
 ```
-
 ```
 Find any content about staff recruitment or performance evaluation.
 ```
@@ -131,11 +107,9 @@ and the documents available to me.
 
 ---
 
-## What data is in the gateway
+## What data is in the demo gateway
 
 ### Employees
-
-A small team of five people used to demonstrate role-based access.
 
 | Name | Department |
 |------|-----------|
@@ -145,37 +119,32 @@ A small team of five people used to demonstrate role-based access.
 | David Leroy | IT |
 | Emma Bernard | RH |
 
-> Salary figures are **only visible with the admin key**.
-> With the read-only key, the salary column is hidden.
+> Salary figures are only visible with the admin key.
 
 ### Documents
 
-Three documents pre-loaded as searchable fragments:
-
-| Document | Classification | What it contains |
-|----------|---------------|-----------------|
-| `rapport-annuel-2024.txt` | INTERNAL | Annual report — digital investment, energy figures, overall results |
+| Document | Classification | Contents |
+|----------|---------------|---------|
+| `rapport-annuel-2024.txt` | INTERNAL | Annual report — digital investment, energy, results |
 | `note-technique-securite.txt` | PUBLIC | IT security best-practices guide |
 | `politique-rh-v3.txt` | **CONFIDENTIAL** | HR recruitment and evaluation policy |
 
-> The **CONFIDENTIAL** document is only returned for admin keys.
-> With the read-only key, search results for "recrutement" or "politique RH" return nothing.
+> The CONFIDENTIAL document is only returned for the admin key.
 
 ---
 
-## The two access levels side by side
+## Access levels at a glance
 
-| What you ask | Read-only key | Admin key |
+| | Read-only key | Admin key |
 |---|---|---|
 | Employee names and departments | Yes | Yes |
 | Employee emails | Yes | Yes |
-| Employee salaries | **No** | Yes |
+| Employee salaries | No | Yes |
 | PUBLIC documents | Yes | Yes |
 | INTERNAL documents | Yes | Yes |
-| CONFIDENTIAL documents | **No** | Yes |
+| CONFIDENTIAL documents | No | Yes |
 
-A good way to see the difference: ask the same question twice, once with each key.
-
+Try this to see the difference clearly:
 ```
 What does the HR policy say about recruitment?
 ```
@@ -184,45 +153,21 @@ What does the HR policy say about recruitment?
 
 ---
 
-## Prompts that show the access control clearly
-
-```
-Compare what I can see vs what an admin user would see. What is hidden from me?
-```
-
-```
-Search for all documents and list their names and classifications.
-```
-
-```
-Show me the full employee list including salaries.
-```
-*(Read-only key: salary column is absent. Admin key: salary included.)*
-
----
-
 ## Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
-| `/mcp` shows "✘ failed" | Click **Reconnect**. If still failed, click **Re-authenticate**. |
-| Browser does not open | Run `/mcp` → **Re-authenticate** to manually trigger the browser flow. |
-| "No documents found" for HR topics | You are using the read-only key. Switch to the admin key and re-authenticate. |
-| Token expired (usually after ~1 hour) | Run `/mcp` → **Re-authenticate** to get a fresh token. |
-| Connected but tools do not appear | Restart Claude Code. The tool list is loaded at startup. |
+| MCP server shows "✘ failed" | Run `/mcp` → **Reconnect**, then **Re-authenticate** if still failing |
+| Browser does not open | Run `/mcp` → **Re-authenticate** to trigger the browser flow manually |
+| "No documents found" for HR topics | You are using the read-only key — switch to `demo-admin-key-001` |
+| Token expired | Run `/mcp` → **Re-authenticate** |
+| Connected but no tools appear | Restart Claude Code |
 
 ---
 
-## Requesting a personal key
+## Want to connect your own data?
 
-If you need a key that is not published in the repository (recommended for anything
-beyond a quick demo), ask the gateway administrator to create one:
+This demo uses static sample data. Ancoris configures the ingestion pipeline — loading
+your actual documents, databases, and CRM data — as part of a client engagement.
 
-```sql
--- Admin runs this on the gateway database:
--- Replace 'Your Name' and 'READ_ONLY' or 'ADMIN' as needed.
--- The raw key value is communicated to you out-of-band (e.g. Signal, encrypted email).
-```
-
-The administrator will give you a raw key value to enter in the browser authentication
-form. Everything else in this guide works the same way.
+[Contact Ancoris](https://www.ancoris.fr)
