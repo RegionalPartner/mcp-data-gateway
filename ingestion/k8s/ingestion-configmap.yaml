@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingestion-config
+  namespace: mcp-demo
+  labels:
+    app: ingestion
+data:
+  # Document classification applied to all ingested chunks.
+  # Must be one of: PUBLIC, INTERNAL, CONFIDENTIAL.
+  classification: "INTERNAL"
+
+  # Seconds between Microsoft Graph delta poll cycles.
+  # 300 s = 5 min; reduce to 60 for near-real-time sync (higher Graph API quota usage).
+  poll-interval-secs: "300"
+
+  # Number of chunk texts per TEI /v1/embeddings request.
+  # TEI cpu-latest handles up to ~128 comfortably; 32 is a safe default.
+  embed-batch-size: "32"
+
+  # TEI embedding service — cluster-internal DNS name from tei-deployment.yaml.
+  tei-base-url: "http://tei:8080"
+
+  # TODO(tokenizer): add tokenizer-path when the HuggingFace tokenizers crate fixes the
+  # unconditional onig import bug. Phase 3 uses character-based chunking (~4 chars/token).

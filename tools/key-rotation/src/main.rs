@@ -38,9 +38,8 @@ struct Args {
     #[arg(long, default_value = "false")]
     dry_run: bool,
 
-    /// Re-generate embeddings after re-encryption.
-    /// NOTE: no-op in Phase 2 — requires the `embedding` column added in Phase 3.
-    ///       Wiring is already in place; activate when pgvector column exists.
+    /// Re-generate embeddings after re-encryption via TEI (Phase 3+).
+    /// Requires V7__add_vector_embeddings.sql applied and TEI_BASE_URL reachable.
     #[arg(long, default_value = "false")]
     reembed: bool,
 
@@ -81,14 +80,14 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    if args.reembed {
-        // TODO(Phase 3): activate once document_chunks.embedding column exists.
-        // The EmbedClient is already implemented in embed.rs.
-        eprintln!(
-            "Warning: --reembed has no effect in Phase 2 — \
-             the embedding column is added in Phase 3 (ingestion daemon)."
-        );
-    }
+    // --reembed activated in Phase 3: re-generate embeddings after re-encryption.
+    // Requires the embedding column added by V7__add_vector_embeddings.sql and
+    // TEI serving at TEI_BASE_URL.
+    let embed_client: Option<embed::EmbedClient> = if args.reembed {
+        Some(embed::EmbedClient::new(&args.tei_base_url))
+    } else {
+        None
+    };
 
     let pb = ProgressBar::new(total as u64);
     pb.set_style(
@@ -133,7 +132,15 @@ async fn main() -> Result<()> {
             };
 
             let new_enc = crypto::encrypt(&new_key, &plain)?;
-            db::update_content(&mut tx, chunk.id, &new_enc).await?;
+
+            if let Some(ref client) = embed_client {
+                let text = String::from_utf8_lossy(&plain);
+                let embedding = client.embed(&text).await?;
+                db::update_content_and_embedding(&mut tx, chunk.id, &new_enc, &embedding).await?;
+            } else {
+                db::update_content(&mut tx, chunk.id, &new_enc).await?;
+            }
+
             rotated += 1;
         }
 

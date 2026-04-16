@@ -57,3 +57,35 @@ pub async fn update_content(
         .await?;
     Ok(())
 }
+
+/// Write re-encrypted content AND a new embedding inside an open transaction.
+///
+/// Called when --reembed is set (Phase 3+).  Requires document_chunks.embedding
+/// (added by V7__add_vector_embeddings.sql).
+///
+/// The embedding is passed as a pgvector literal `[f1,...,fn]` and cast with
+/// `::vector` so no extra driver type registration is needed.
+pub async fn update_content_and_embedding(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    new_content: &[u8],
+    embedding: &[f32],
+) -> Result<()> {
+    let vec_str = format_vector(embedding);
+    sqlx::query(
+        "UPDATE document_chunks \
+         SET encrypted_content = $1, embedding = $2::vector \
+         WHERE id = $3",
+    )
+    .bind(new_content)
+    .bind(vec_str)
+    .bind(id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+fn format_vector(v: &[f32]) -> String {
+    let inner: Vec<String> = v.iter().map(|f| f.to_string()).collect();
+    format!("[{}]", inner.join(","))
+}
