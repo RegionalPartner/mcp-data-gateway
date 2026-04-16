@@ -166,9 +166,6 @@ jobs:
     name: Dependency Review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    # TODO: remove continue-on-error once Dependency graph is enabled in repo Settings →
-    #       Security analysis → "Dependency graph". Free for all repos.
-    continue-on-error: true
     permissions:
       contents: read
       pull-requests: write
