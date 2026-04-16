@@ -175,6 +175,8 @@ jobs:
 
       - name: Dependency review
         uses: actions/dependency-review-action@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           fail-on-severity: high
           comment-summary-in-pr: always
