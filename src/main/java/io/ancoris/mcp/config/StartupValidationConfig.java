@@ -3,13 +3,13 @@ package io.ancoris.mcp.config;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
 
 /**
  * SEC-010: Enforces TLS on all backend connections at startup.
  * Disabled via mcp.security.enforce-tls=false in dev/test profiles.
  */
-@Configuration
+@Component
 @ConditionalOnProperty(name = "mcp.security.enforce-tls", havingValue = "true")
 public class StartupValidationConfig {
 
