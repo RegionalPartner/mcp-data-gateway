@@ -206,8 +206,6 @@ pitest {
     targetTests.set(setOf("io.ancoris.mcp.*"))
     mutationThreshold.set(60)
     outputFormats.set(setOf("HTML", "XML"))
-    timeoutFactor.set("1.5".toBigDecimal())
-    timeoutConst.set(5000L)
 }
 
 // SEC-023: key values must come from env vars — never hardcoded in source.
