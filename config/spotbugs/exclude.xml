@@ -106,6 +106,33 @@
         <Bug pattern="XSS_SERVLET,XSS_REQUEST_PARAMETER_TO_SERVLET_WRITER"/>
     </Match>
 
+    <!-- ApiKeyFilter.sendUnauthorized() writes a JSON error body. The `message` argument
+         is always a compile-time string literal ("Invalid API key", "Invalid Bearer token",
+         "Authentication required") — never user input. Content-Type is application/json.
+         SpotBugs 6.5.0 cannot trace through the private-method boundary. -->
+    <Match>
+        <Class name="io.ancoris.mcp.security.ApiKeyFilter"/>
+        <Bug pattern="XSS_SERVLET"/>
+    </Match>
+
+    <!-- VA_FORMAT_STRING_USES_NEWLINE: \n inside Java text blocks used as SQL / HTML
+         templates, not as printf-style format strings targeting a terminal.
+         %n would produce a platform-specific line separator, which is wrong for SQL
+         and HTML payloads. SpotBugs 6.5.0 triggers on any .formatted() call whose
+         template contains \n, regardless of context. -->
+    <Match>
+        <Class name="io.ancoris.mcp.connector.VectorSearchConnector"/>
+        <Bug pattern="VA_FORMAT_STRING_USES_NEWLINE"/>
+    </Match>
+    <Match>
+        <Class name="io.ancoris.mcp.tools.DocumentSearchTool"/>
+        <Bug pattern="VA_FORMAT_STRING_USES_NEWLINE"/>
+    </Match>
+    <Match>
+        <Class name="io.ancoris.mcp.oauth.OAuthController"/>
+        <Bug pattern="VA_FORMAT_STRING_USES_NEWLINE"/>
+    </Match>
+
     <!-- Suppress false positives from Spring-generated proxy classes -->
     <Match>
         <Class name="~.*\$\$.*"/>
