@@ -9,7 +9,7 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
     id("jacoco")
     id("checkstyle")
-    id("com.github.spotbugs") version "6.0.9"
+    id("com.github.spotbugs") version "6.5.0"
     id("org.owasp.dependencycheck") version "9.2.0"
 }
 
@@ -18,7 +18,7 @@ version = "0.0.1-SNAPSHOT"
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
@@ -80,7 +80,7 @@ dependencies {
     implementation("com.github.ben-manes.caffeine:caffeine")
 
     // SpotBugs security plugin
-    spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.12.0")
+    spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0")
 
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
