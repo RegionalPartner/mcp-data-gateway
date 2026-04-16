@@ -38,3 +38,6 @@ org/
 io/
 META-INF/
 OSGI-INF/
+
+# Rust build output
+tools/key-rotation/target/
