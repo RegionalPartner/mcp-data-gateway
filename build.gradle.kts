@@ -1,6 +1,7 @@
 import com.github.spotbugs.snom.Confidence
 import com.github.spotbugs.snom.Effort
 import com.github.spotbugs.snom.SpotBugsTask
+import org.cyclonedx.gradle.CycloneDxTask
 
 
 plugins {
@@ -11,6 +12,8 @@ plugins {
     id("checkstyle")
     id("com.github.spotbugs") version "6.5.0"
     id("org.owasp.dependencycheck") version "12.2.1"
+    id("org.cyclonedx.bom") version "3.2.4"
+    id("info.solidsoft.pitest") version "1.19.0"
 }
 
 group = "io.ancoris"
@@ -169,6 +172,42 @@ tasks.check {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// ── CycloneDX SBOM ─────────────────────────────────────────────────────────
+// Generates a CycloneDX BOM at build time and places it on the classpath so
+// Spring Boot Actuator can expose it at /actuator/sbom/application.
+tasks.named<CycloneDxTask>("cyclonedxBom") {
+    includeConfigs.set(listOf("runtimeClasspath"))
+    destination.set(layout.buildDirectory.dir("generated/sbom/META-INF/sbom").get().asFile)
+    outputName.set("application")
+    outputFormat.set("json")
+    schemaVersion.set("1.5")
+}
+
+sourceSets {
+    main {
+        resources.srcDir(layout.buildDirectory.dir("generated/sbom"))
+    }
+}
+
+tasks.processResources {
+    dependsOn(tasks.named("cyclonedxBom"))
+}
+
+// ── PIT Mutation Testing ────────────────────────────────────────────────────
+// Run via: ./gradlew pitest  (nightly CI only — too slow for every build)
+pitest {
+    junit5PluginVersion.set("1.2.1")
+    targetClasses.set(setOf("io.ancoris.mcp.*"))
+    targetTests.set(setOf("io.ancoris.mcp.*"))
+    mutationThreshold.set(60)
+    withHistory.set(true)
+    historyInputLocation.set(file("build/pit-history/mutations.xml"))
+    historyOutputLocation.set(file("build/pit-history/mutations.xml"))
+    outputFormats.set(setOf("HTML", "XML"))
+    timeoutFactor.set(1.5)
+    timeoutConst.set(5000)
 }
 
 // SEC-023: key values must come from env vars — never hardcoded in source.

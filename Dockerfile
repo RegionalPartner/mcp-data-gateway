@@ -1,11 +1,12 @@
 # Stage 1 — extract layers from pre-built JAR (produced by CI build-and-test job)
-FROM eclipse-temurin:25-jre-alpine AS extractor
+# Pin to digest for supply-chain safety; update via: docker pull eclipse-temurin:25-jre-alpine
+FROM eclipse-temurin:25-jre-alpine@sha256:5fcc27581b238efbfda93da3a103f59e0b5691fe522a7ac03fe8057b0819c888 AS extractor
 WORKDIR /app
 COPY build/libs/*.jar app.jar
 RUN java -Djarmode=layertools -jar app.jar extract
 
 # Stage 2 — minimal runtime image
-FROM eclipse-temurin:25-jre-alpine
+FROM eclipse-temurin:25-jre-alpine@sha256:5fcc27581b238efbfda93da3a103f59e0b5691fe522a7ac03fe8057b0819c888
 WORKDIR /app
 
 # Copy layers in dependency-change order (least → most frequent)
