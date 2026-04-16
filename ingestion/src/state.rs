@@ -13,12 +13,11 @@ use sqlx::PgPool;
 ///
 /// Returns `None` on the first run (no row yet), which triggers a full crawl.
 pub async fn load_cursor(pool: &PgPool, drive_id: &str) -> Result<Option<String>> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT delta_token FROM ingestion_state WHERE drive_id = $1",
-    )
-    .bind(drive_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT delta_token FROM ingestion_state WHERE drive_id = $1")
+            .bind(drive_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.map(|(token,)| token))
 }
 

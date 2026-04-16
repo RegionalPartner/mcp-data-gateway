@@ -102,9 +102,7 @@ impl GraphClient {
 
         let start_url = match cursor {
             Some(url) => url.to_string(),
-            None => format!(
-                "https://graph.microsoft.com/v1.0/drives/{drive_id}/root/delta"
-            ),
+            None => format!("https://graph.microsoft.com/v1.0/drives/{drive_id}/root/delta"),
         };
 
         let mut changed = Vec::new();

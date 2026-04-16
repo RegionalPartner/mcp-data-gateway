@@ -6,8 +6,7 @@
 /// Uses ring (not aes-gcm) to match the FIPS-audited backend already in use.
 use anyhow::{anyhow, Result};
 use ring::aead::{
-    Aad, BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM,
-    NONCE_LEN,
+    Aad, BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM, NONCE_LEN,
 };
 use ring::error::Unspecified;
 use ring::rand::{SecureRandom, SystemRandom};
@@ -18,9 +17,12 @@ pub const IV_LEN: usize = NONCE_LEN; // 12 bytes — matches Java's IV_LENGTH_BY
 /// Mirrors ContentEncryptor.java: HexFormat.of().parseHex(hexKey)
 pub fn parse_key(hex_str: &str) -> Result<[u8; 32]> {
     let bytes = hex::decode(hex_str.trim())?;
-    bytes
-        .try_into()
-        .map_err(|_| anyhow!("key must be exactly 64 hex chars (32 bytes); got {} bytes", hex_str.len() / 2))
+    bytes.try_into().map_err(|_| {
+        anyhow!(
+            "key must be exactly 64 hex chars (32 bytes); got {} bytes",
+            hex_str.len() / 2
+        )
+    })
 }
 
 /// AES-256-GCM encrypt with a fresh random IV.

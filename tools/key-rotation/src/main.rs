@@ -150,9 +150,7 @@ async fn main() -> Result<()> {
     }
 
     pb.finish_with_message("done");
-    println!(
-        "Complete: {rotated} rows rotated, {skipped} already rotated (skipped)."
-    );
+    println!("Complete: {rotated} rows rotated, {skipped} already rotated (skipped).");
 
     Ok(())
 }

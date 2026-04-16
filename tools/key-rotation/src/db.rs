@@ -15,11 +15,10 @@ pub struct Chunk {
 
 /// Count rows with non-null encrypted_content (the rotation target set).
 pub async fn count_pending(pool: &PgPool) -> Result<i64> {
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM document_chunks WHERE encrypted_content IS NOT NULL",
-    )
-    .fetch_one(pool)
-    .await?;
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM document_chunks WHERE encrypted_content IS NOT NULL")
+            .fetch_one(pool)
+            .await?;
     Ok(row.0)
 }
 

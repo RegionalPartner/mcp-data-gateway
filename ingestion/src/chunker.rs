@@ -83,7 +83,11 @@ mod tests {
         // Enough chars to span multiple windows.
         let text = "word ".repeat(500); // 2 500 chars → 2 chunks
         let chunks = c.chunk(&text).unwrap();
-        assert!(chunks.len() >= 2, "expected ≥2 chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() >= 2,
+            "expected ≥2 chunks, got {}",
+            chunks.len()
+        );
     }
 
     #[test]
@@ -92,8 +96,14 @@ mod tests {
         // Check boundaries: first chunk starts at char 0, last chunk ends at text end.
         let text = format!("START{}END", "X".repeat(CHUNK_CHARS));
         let chunks = chunk_by_chars(&text);
-        assert!(chunks.first().unwrap().starts_with("START"), "first chunk missing start");
-        assert!(chunks.last().unwrap().ends_with("END"), "last chunk missing end");
+        assert!(
+            chunks.first().unwrap().starts_with("START"),
+            "first chunk missing start"
+        );
+        assert!(
+            chunks.last().unwrap().ends_with("END"),
+            "last chunk missing end"
+        );
     }
 
     #[test]
@@ -103,6 +113,9 @@ mod tests {
         let chunks = chunk_by_chars(&text);
         assert_eq!(chunks.len(), 2);
         // Second chunk must be OVERLAP_CHARS long (all 'A's)
-        assert_eq!(chunks[1].chars().count(), OVERLAP_CHARS + STRIDE_CHARS.min(chunks[1].chars().count() - OVERLAP_CHARS));
+        assert_eq!(
+            chunks[1].chars().count(),
+            OVERLAP_CHARS + STRIDE_CHARS.min(chunks[1].chars().count() - OVERLAP_CHARS)
+        );
     }
 }
