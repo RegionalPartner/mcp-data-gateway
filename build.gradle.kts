@@ -63,10 +63,11 @@ dependencies {
     // Spring AI MCP Server (Streamable HTTP via WebMVC)
     implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
 
-    // Spring AI Ollama core — OllamaEmbeddingModel for RAG semantic search (RAG-001)
+    // Spring AI OpenAI client — OpenAiEmbeddingModel pointed at TEI (RAG-001)
+    // TEI (HuggingFace Text Embeddings Inference) exposes an OpenAI-compatible API.
     // Using the core module instead of the starter to avoid spring-ai-retry-autoconfigure,
     // which requires org.springframework.core.retry.RetryListener (Spring 7+, not in Boot 3.5)
-    implementation("org.springframework.ai:spring-ai-ollama")
+    implementation("org.springframework.ai:spring-ai-openai")
 
     // Database
     runtimeOnly("org.postgresql:postgresql:42.7.3")

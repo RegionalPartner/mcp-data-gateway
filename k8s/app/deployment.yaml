@@ -70,11 +70,8 @@ spec:
                   key: mcp-content-key
             - name: JAVA_TOOL_OPTIONS
               value: "-Djava.io.tmpdir=/tmp"
-            - name: OLLAMA_BASE_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: mcp-gateway-config
-                  key: ollama-base-url
+            - name: TEI_BASE_URL
+              value: "http://tei:8080"
           readinessProbe:
             httpGet:
               path: /actuator/health
