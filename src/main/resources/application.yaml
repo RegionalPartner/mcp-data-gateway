@@ -8,12 +8,12 @@ spring:
         name: mcp-data-gateway
         version: 1.0.0
         protocol: STREAMABLE
-    ollama:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-      chat:
-        enabled: false   # RAG-001: embedding only — no chat model needed
-      embedding:
-        model: nomic-embed-text
+    openai:
+      base-url: ${TEI_BASE_URL:http://tei:8080}
+      api-key: none      # TEI does not require an API key
+  threads:
+    virtual:
+      enabled: true      # JEP 491 — virtual threads safe on JDK 25 (no pinning risk)
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
