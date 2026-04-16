@@ -1,7 +1,6 @@
 import com.github.spotbugs.snom.Confidence
 import com.github.spotbugs.snom.Effort
 import com.github.spotbugs.snom.SpotBugsTask
-import org.cyclonedx.gradle.CycloneDxTask
 
 
 plugins {
@@ -175,14 +174,18 @@ tasks.withType<Test> {
 }
 
 // ── CycloneDX SBOM ─────────────────────────────────────────────────────────
-// Generates a CycloneDX BOM at build time and places it on the classpath so
-// Spring Boot Actuator can expose it at /actuator/sbom/application.
-tasks.named<CycloneDxTask>("cyclonedxBom") {
-    includeConfigs.set(listOf("runtimeClasspath"))
-    destination.set(layout.buildDirectory.dir("generated/sbom/META-INF/sbom").get().asFile)
-    outputName.set("application")
-    outputFormat.set("json")
-    schemaVersion.set("1.5")
+// cyclonedxBom (registered by the plugin) outputs build/reports/bom.json by default.
+// copyCyclonedxBom renames and places it at classpath:META-INF/sbom/application.cdx.json
+// so that Spring Boot Actuator auto-configures /actuator/sbom/application.
+tasks.register<Copy>("copyCyclonedxBom") {
+    group = "documentation"
+    description = "Places the CycloneDX BOM on the classpath for Spring Boot Actuator."
+    dependsOn("cyclonedxBom")
+    from(layout.buildDirectory.dir("reports")) {
+        include("bom.json")
+        rename { "application.cdx.json" }
+    }
+    into(layout.buildDirectory.dir("generated/sbom/META-INF/sbom"))
 }
 
 sourceSets {
@@ -192,7 +195,7 @@ sourceSets {
 }
 
 tasks.processResources {
-    dependsOn(tasks.named("cyclonedxBom"))
+    dependsOn(tasks.named("copyCyclonedxBom"))
 }
 
 // ── PIT Mutation Testing ────────────────────────────────────────────────────
@@ -206,8 +209,8 @@ pitest {
     historyInputLocation.set(file("build/pit-history/mutations.xml"))
     historyOutputLocation.set(file("build/pit-history/mutations.xml"))
     outputFormats.set(setOf("HTML", "XML"))
-    timeoutFactor.set(1.5)
-    timeoutConst.set(5000)
+    timeoutFactor.set("1.5".toBigDecimal())
+    timeoutConst.set(5000L)
 }
 
 // SEC-023: key values must come from env vars — never hardcoded in source.
