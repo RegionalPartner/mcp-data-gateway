@@ -1,16 +1,16 @@
-/// Text chunker — character-based overlapping windows.
-///
-/// Approximates 512-token chunks at ~4 chars/token (English):
-///   chunk size  = 2 048 chars  ≈ 512 tokens
-///   overlap     =   200 chars  ≈  50 tokens
-///   stride      = 1 848 chars  ≈ 462 tokens
-///
-/// This is the production implementation for Phase 3.
-///
-/// TODO(tokenizer): once the `tokenizers` crate (≤0.20) fixes an unconditional C `onig`
-/// import that breaks `default-features = false` builds, swap in a proper
-/// bert-base-uncased tokenizer for exact 512-token windows.  The Chunker public
-/// API will not change — only `chunk_by_chars` gets replaced with `chunk_by_tokens`.
+// Text chunker — character-based overlapping windows.
+//
+// Approximates 512-token chunks at ~4 chars/token (English):
+//   chunk size  = 2 048 chars  ≈ 512 tokens
+//   overlap     =   200 chars  ≈  50 tokens
+//   stride      = 1 848 chars  ≈ 462 tokens
+//
+// This is the production implementation for Phase 3.
+//
+// TODO(tokenizer): once the `tokenizers` crate (≤0.20) fixes an unconditional C `onig`
+// import that breaks `default-features = false` builds, swap in a proper
+// bert-base-uncased tokenizer for exact 512-token windows.  The Chunker public
+// API will not change — only `chunk_by_chars` gets replaced with `chunk_by_tokens`.
 
 const CHUNK_CHARS: usize = 2048;
 const OVERLAP_CHARS: usize = 200;
