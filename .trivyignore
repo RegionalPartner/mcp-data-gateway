@@ -1,0 +1,5 @@
+# Trivy CVE allowlist
+# Add CVE IDs here (one per line) to suppress known false-positives or
+# accepted risks that have been reviewed and approved.
+# Example:
+# CVE-2023-XXXXX
