@@ -63,13 +63,6 @@ jobs:
       - name: Grant Gradle wrapper execute permission
         run: chmod +x gradlew
 
-      - name: Restore PIT history
-        uses: actions/cache@v4
-        with:
-          path: build/pit-history
-          key: pit-history-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: pit-history-${{ runner.os }}-
-
       - name: Run PIT mutation tests
         run: ./gradlew pitest
         continue-on-error: true   # nightly — failures are informational, not blocking
