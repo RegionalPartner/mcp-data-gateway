@@ -10,7 +10,7 @@ plugins {
     id("jacoco")
     id("checkstyle")
     id("com.github.spotbugs") version "6.5.0"
-    id("org.owasp.dependencycheck") version "9.2.0"
+    id("org.owasp.dependencycheck") version "12.2.1"
 }
 
 group = "io.ancoris"
@@ -153,10 +153,13 @@ checkstyle {
 
 // ── OWASP Dependency Check ─────────────────────────────────────────────────
 dependencyCheck {
+    nvd {
+        apiKey = providers.environmentVariable("NVD_API_KEY").getOrElse("")
+        delay = 16000
+    }
     failBuildOnCVSS = 7.0f
-    formats = listOf("XML", "SARIF", "HTML")
+    formats = listOf("HTML", "JSON")
     suppressionFile = "config/owasp/suppression.xml"
-    nvd.apiKey = System.getenv("NVD_API_KEY") ?: ""
 }
 
 // ── check task gate ─────────────────────────────────────────────────────────
