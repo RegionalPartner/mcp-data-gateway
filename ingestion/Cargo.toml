@@ -1,0 +1,56 @@
+[package]
+name = "ingestion"
+version = "0.1.0"
+edition = "2021"
+description = "SharePoint → PostgreSQL ingestion daemon for MCP Data Gateway (Phase 3)"
+
+[[bin]]
+name = "ingestion"
+path = "src/main.rs"
+
+[dependencies]
+# AES-256-GCM — wire-format byte-compatible with ContentEncryptor.java (SEC-ENC).
+# MUST use ring (not aes-gcm) to maintain FIPS-audited crypto consistency with the gateway.
+ring = "0.17"
+
+# PostgreSQL async I/O — runtime-tokio-rustls avoids OpenSSL for static musl builds.
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid"] }
+
+# Async runtime.
+tokio = { version = "1", features = ["full"] }
+
+# CLI argument parsing.
+clap = { version = "4", features = ["derive", "env"] }
+
+# HTTP client — rustls-tls only, no OpenSSL, compatible with musl static build.
+# Used for: Microsoft Graph API, TEI embeddings, SharePoint file downloads.
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# TODO(tokenizer): replace character-based chunking with the HuggingFace tokenizers crate
+# (bert-base-uncased, 512-token windows, 50-token overlap) once crates.io fixes the compile
+# bug where tokenizers ≤0.20 unconditionally imports the C `onig` crate even without the
+# `onig` feature enabled.  Track: https://github.com/huggingface/tokenizers/issues (onig)
+
+# JSON serialisation.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Ergonomic error handling.
+anyhow = "1"
+
+# Hex encoding for key parsing.
+hex = "0.4"
+
+# UUID for new chunk IDs.
+uuid = { version = "1", features = ["v4"] }
+
+# Structured logging.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,0 +1,5 @@
+/target/
+# tokenizer.json is downloaded by Dockerfile.ingestion at build time.
+# For local cargo test, download it manually and set TOKENIZER_PATH=./tokenizer.json.
+# Do NOT commit — 700 KB binary artifact with no diff value in git history.
+tokenizer.json

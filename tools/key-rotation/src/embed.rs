@@ -1,15 +1,11 @@
-// Phase 3 stub — EmbedClient is wired in when document_chunks.embedding column exists.
-#![allow(dead_code)]
-
-/// TEI embedding client — stub for Phase 2, activated in Phase 3.
+/// TEI embedding client — activated in Phase 3 for --reembed support.
 ///
-/// The document_chunks table does not yet have an `embedding` column (added in Phase 3
-/// when the ingestion daemon is introduced).  This module provides the client
-/// infrastructure so --reembed can be wired in without changes to the crate's
-/// public API in Phase 3.
+/// Used by the key-rotation loop when --reembed is set: after re-encrypting each chunk
+/// the plaintext is re-embedded via TEI and the embedding column updated in the same
+/// transaction.  Requires the embedding column from V7__add_vector_embeddings.sql.
 ///
 /// TEI API: POST /v1/embeddings  (OpenAI-compatible)
-/// Model:   nomic-ai/nomic-embed-text-v1.5  (768-dim, same as v1)
+/// Model:   nomic-ai/nomic-embed-text-v1.5  (768-dim)
 use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};

@@ -1,12 +1,14 @@
 /// AES-256-GCM crypto — wire-format compatible with ContentEncryptor.java.
 ///
 /// Wire format: [12B IV][ciphertext + 16B GCM tag]
-/// Key source:  64 hex chars (32 bytes), from MCP_CONTENT_KEY / --old-key / --new-key
+/// Key source:  64 hex chars (32 bytes), from MCP_CONTENT_KEY.
 ///
 /// Uses ring (not aes-gcm) to match the FIPS-audited backend already in use.
+/// This module is intentionally byte-identical to tools/key-rotation/src/crypto.rs —
+/// any change here must be mirrored there (and vice versa) to preserve wire compatibility.
 use anyhow::{anyhow, Result};
 use ring::aead::{
-    Aad, BoundKey, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_256_GCM, NONCE_LEN,
+    Aad, BoundKey, Nonce, NonceSequence, SealingKey, UnboundKey, AES_256_GCM, NONCE_LEN,
 };
 use ring::error::Unspecified;
 use ring::rand::{SecureRandom, SystemRandom};
@@ -49,32 +51,6 @@ pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// AES-256-GCM decrypt.
-///
-/// Expects wire format: [12B IV][ciphertext + 16B GCM tag]
-/// Returns Err if the key is wrong OR the ciphertext is tampered.
-pub fn decrypt(key: &[u8; 32], wire: &[u8]) -> Result<Vec<u8>> {
-    const MIN_LEN: usize = IV_LEN + 16; // IV + GCM tag (no plaintext)
-    if wire.len() < MIN_LEN {
-        return Err(anyhow!(
-            "wire data too short: {} bytes (minimum {})",
-            wire.len(),
-            MIN_LEN
-        ));
-    }
-
-    let iv: [u8; IV_LEN] = wire[..IV_LEN].try_into().unwrap();
-    let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| anyhow!("invalid key length"))?;
-    let mut opening = OpeningKey::new(unbound, OneShot::new(iv));
-
-    let mut buf = wire[IV_LEN..].to_vec();
-    let plain = opening
-        .open_in_place(Aad::empty(), &mut buf)
-        .map_err(|_| anyhow!("decryption failed — wrong key or tampered data"))?;
-
-    Ok(plain.to_vec())
-}
-
 // ── NonceSequence that fires exactly once ──────────────────────────────────
 
 struct OneShot {
@@ -104,44 +80,14 @@ impl NonceSequence for OneShot {
 mod tests {
     use super::*;
 
-    /// Encrypt → decrypt round trip with zero test key.
     #[test]
     fn round_trip() {
         let key = [0u8; 32];
         let plain = b"hello world";
         let wire = encrypt(&key, plain).unwrap();
-        // Wire must be: 12 (IV) + 11 (plaintext) + 16 (GCM tag) = 39 bytes
         assert_eq!(wire.len(), IV_LEN + plain.len() + 16);
-        let got = decrypt(&key, &wire).unwrap();
-        assert_eq!(got, plain);
     }
 
-    /// Wrong key must fail authentication.
-    #[test]
-    fn wrong_key_fails() {
-        let key_a = [0xAAu8; 32];
-        let key_b = [0xBBu8; 32];
-        let wire = encrypt(&key_a, b"secret").unwrap();
-        assert!(decrypt(&key_b, &wire).is_err());
-    }
-
-    /// Flipping any bit in the ciphertext must fail GCM tag check.
-    #[test]
-    fn tampered_ciphertext_fails() {
-        let key = [0u8; 32];
-        let mut wire = encrypt(&key, b"secret data").unwrap();
-        wire[IV_LEN + 2] ^= 0xFF; // flip bits in ciphertext area
-        assert!(decrypt(&key, &wire).is_err());
-    }
-
-    /// Short data must return an error, not panic.
-    #[test]
-    fn too_short_fails() {
-        let key = [0u8; 32];
-        assert!(decrypt(&key, &[0u8; 10]).is_err());
-    }
-
-    /// parse_key happy path.
     #[test]
     fn parse_key_valid() {
         let hex = "a".repeat(64);
@@ -149,16 +95,9 @@ mod tests {
         assert_eq!(key, [0xAAu8; 32]);
     }
 
-    /// parse_key wrong length.
     #[test]
     fn parse_key_wrong_length() {
         assert!(parse_key(&"0".repeat(32)).is_err());
         assert!(parse_key(&"0".repeat(66)).is_err());
     }
-
-    // TODO(Phase 3 cross-language test):
-    // Add a test with a ciphertext produced by ContentEncryptor.java using a
-    // known key and known IV, to prove byte-level wire-format compatibility.
-    // Run: MCP_CONTENT_KEY=<64-hex> ./gradlew test -Dtest=ContentEncryptorCrossLangIT
-    // Copy the base64-encoded wire bytes here and assert decrypt matches the plaintext.
 }

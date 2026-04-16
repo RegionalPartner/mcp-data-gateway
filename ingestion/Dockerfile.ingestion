@@ -1,0 +1,30 @@
+# ── Build stage ───────────────────────────────────────────────────────────────
+# rust:*-alpine uses musl libc — Rust produces statically linked binaries by default,
+# matching the FROM scratch final image (no glibc, no shell, zero attack surface).
+FROM rust:1.92-alpine AS builder
+
+# musl-dev: C headers required by ring's build script (getrandom syscall wrappers).
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+
+# Cache dependencies before copying source (faster rebuilds when only src/ changes).
+COPY Cargo.toml ./
+RUN mkdir -p src && printf 'fn main(){}' > src/main.rs \
+    && cargo build --release \
+    && rm -rf src
+
+# Build the real binary.
+COPY src/ src/
+# Touch main.rs so Cargo detects the source change and re-links.
+RUN touch src/main.rs && cargo build --release
+
+# ── Final image (<10 MB) ──────────────────────────────────────────────────────
+# FROM scratch: no OS, no shell, no package manager.
+# ring uses getrandom(2) directly — no /dev/urandom mount needed.
+# TLS roots are bundled via reqwest's rustls-tls feature (webpki-roots).
+FROM scratch
+
+COPY --from=builder /build/target/release/ingestion /ingestion
+
+ENTRYPOINT ["/ingestion"]

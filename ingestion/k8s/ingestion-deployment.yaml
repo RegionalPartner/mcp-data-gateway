@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion
+  namespace: mcp-demo
+  labels:
+    app: ingestion
+spec:
+  # Single replica — delta cursor is stored in PostgreSQL, so any restart resumes
+  # cleanly from the last saved @odata.deltaLink.  Scale to 1 only; multiple
+  # replicas would race on the same delta cursor.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingestion
+  template:
+    metadata:
+      labels:
+        app: ingestion
+    spec:
+      # Reuse the existing SA — the daemon needs no Kubernetes API access.
+      serviceAccountName: mcp-gateway
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534    # nobody (FROM scratch has no user DB; UID enforced by k8s)
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ingestion
+          image: ghcr.io/regionalpartner/mcp-data-gateway/ingestion:develop
+          imagePullPolicy: Always
+          env:
+            # Secrets — shared with the gateway where possible.
+            - name: MCP_CONTENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-gateway-secrets
+                  key: mcp-content-key
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-gateway-secrets
+                  key: db-url
+            # Azure AD credentials for Microsoft Graph API (app-only, client credentials).
+            - name: AZURE_TENANT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ingestion-secrets
+                  key: azure-tenant-id
+            - name: AZURE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ingestion-secrets
+                  key: azure-client-id
+            - name: AZURE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ingestion-secrets
+                  key: azure-client-secret
+            - name: SHAREPOINT_DRIVE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ingestion-secrets
+                  key: sharepoint-drive-id
+            # Non-secret config from ConfigMap.
+            - name: CLASSIFICATION
+              valueFrom:
+                configMapKeyRef:
+                  name: ingestion-config
+                  key: classification
+            - name: TEI_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ingestion-config
+                  key: tei-base-url
+            - name: POLL_INTERVAL_SECS
+              valueFrom:
+                configMapKeyRef:
+                  name: ingestion-config
+                  key: poll-interval-secs
+            - name: RUST_LOG
+              value: "ingestion=info"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "256Mi"   # hard limit — OOM kill if exceeded
+              cpu: "500m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true   # FROM scratch — nothing to write
+            capabilities:
+              drop: ["ALL"]
