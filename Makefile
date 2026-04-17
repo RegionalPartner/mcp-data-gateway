@@ -12,7 +12,10 @@ GIT_REMOTE  := $(shell git config --get remote.origin.url 2>/dev/null)
 DOMAIN      := $(shell grep -m1 '^\s*- host:' k8s/app/ingress.yaml | awk '{print $$3}' 2>/dev/null)
 GITHUB_OWNER := $(shell printf '%s\n' "$(GIT_REMOTE)" | sed -nE 's#(git@|https://)github.com[:/]([^/]+)/.*#\2#p' | tr '[:upper:]' '[:lower:]')
 IMAGE_REPO ?= $(if $(GITHUB_OWNER),ghcr.io/$(GITHUB_OWNER)/mcp-data-gateway,)
-IMAGE_TAG  ?= develop
+# IMAGE_TAG defaults to the short SHA of the current HEAD so that make up / make promote
+# always deploy a known, reproducible image rather than the floating :develop tag.
+# Override explicitly when you want a specific version:  make up IMAGE_TAG=sha-abc1234
+IMAGE_TAG  ?= sha-$(shell git rev-parse --short HEAD)
 IMAGE      ?= $(IMAGE_REPO):$(IMAGE_TAG)
 
 # ── Colours ───────────────────────────────────────────────────────────────────
