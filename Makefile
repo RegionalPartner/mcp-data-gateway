@@ -12,10 +12,13 @@ GIT_REMOTE  := $(shell git config --get remote.origin.url 2>/dev/null)
 DOMAIN      := $(shell grep -m1 '^\s*- host:' k8s/app/ingress.yaml | awk '{print $$3}' 2>/dev/null)
 GITHUB_OWNER := $(shell printf '%s\n' "$(GIT_REMOTE)" | sed -nE 's#(git@|https://)github.com[:/]([^/]+)/.*#\2#p' | tr '[:upper:]' '[:lower:]')
 IMAGE_REPO ?= $(if $(GITHUB_OWNER),ghcr.io/$(GITHUB_OWNER)/mcp-data-gateway,)
-# IMAGE_TAG defaults to the short SHA of the current HEAD so that make up / make promote
-# always deploy a known, reproducible image rather than the floating :develop tag.
-# Override explicitly when you want a specific version:  make up IMAGE_TAG=sha-abc1234
-IMAGE_TAG  ?= sha-$(shell git rev-parse --short HEAD)
+# IMAGE_TAG resolution order (first match wins):
+#   1. Explicit override on the command line:  make up IMAGE_TAG=sha-abc1234
+#   2. DEPLOYED_IMAGE_TAG saved in .deploy.env by the last make up / make promote
+#      → make down on Friday + make up on Monday redeploys the exact same image
+#   3. SHA of the current local HEAD (fallback for first-ever deploy)
+_SAVED_TAG  := $(shell grep '^DEPLOYED_IMAGE_TAG=' $(ENV_FILE) 2>/dev/null | cut -d= -f2)
+IMAGE_TAG   ?= $(if $(_SAVED_TAG),$(_SAVED_TAG),sha-$(shell git rev-parse --short HEAD))
 IMAGE      ?= $(IMAGE_REPO):$(IMAGE_TAG)
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -108,7 +111,9 @@ promote: _validate-image
 	$(K) set image deployment/mcp-gateway mcp-gateway=$(IMAGE) -n $(NS)
 	$(K) set env deployment/mcp-gateway MCP_SECURITY_ENFORCE_TLS=false -n $(NS)
 	$(K) rollout status deployment/mcp-gateway -n $(NS) --timeout=120s
-	@echo -e "$(G)✓ Production updated.$(N)"
+	@sed -i '/^DEPLOYED_IMAGE_TAG=/d' $(ENV_FILE) 2>/dev/null; \
+	  echo "DEPLOYED_IMAGE_TAG=$(IMAGE_TAG)" >> $(ENV_FILE)
+	@echo -e "$(G)✓ Production updated — image tag recorded in $(ENV_FILE).$(N)"
 	@$(MAKE) teardown-preview 2>/dev/null || true
 
 teardown-preview:
@@ -265,6 +270,9 @@ _app:
 	@# In-cluster PostgreSQL has no TLS — disable the enforce-tls startup check
 	$(K) set env deployment/mcp-gateway MCP_SECURITY_ENFORCE_TLS=false -n $(NS)
 	$(K) rollout status deployment/mcp-gateway -n $(NS) --timeout=120s
+	@sed -i '/^DEPLOYED_IMAGE_TAG=/d' $(ENV_FILE) 2>/dev/null; \
+	  echo "DEPLOYED_IMAGE_TAG=$(IMAGE_TAG)" >> $(ENV_FILE)
+	@echo -e "  $(G)Deployed image tag recorded in $(ENV_FILE)$(N)"
 
 _smoke:
 	@echo -e "$(G)▶ Smoke test...$(N)"
