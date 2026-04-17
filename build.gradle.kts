@@ -5,8 +5,7 @@ import com.github.spotbugs.snom.SpotBugsTask
 
 plugins {
     java
-    id("org.springframework.boot") version "3.5.13"
-    id("io.spring.dependency-management") version "1.1.7"
+    id("org.springframework.boot") version "4.1.0-M4"
     id("jacoco")
     id("checkstyle")
     id("com.github.spotbugs") version "6.5.0"
@@ -21,22 +20,6 @@ version = "0.0.1-SNAPSHOT"
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
-    }
-}
-
-dependencyManagement {
-    imports {
-        mavenBom("org.springframework.ai:spring-ai-bom:1.1.4")
-        mavenBom("org.testcontainers:testcontainers-bom:1.20.4")
-    }
-    dependencies {
-        // MCP SDK 0.17.2 adds ProtocolVersions.MCP_2025_11_25 (required by Claude Code 2.1.x)
-        // while remaining API-compatible with mcp-annotations:0.8.0 used by Spring AI 1.1.4.
-        // (0.18.x removed McpJsonMapper.createDefault(), breaking mcp-annotations:0.8.0)
-        dependency("io.modelcontextprotocol.sdk:mcp:0.17.2")
-        dependency("io.modelcontextprotocol.sdk:mcp-core:0.17.2")
-        dependency("io.modelcontextprotocol.sdk:mcp-json-jackson2:0.17.2")
-        dependency("io.modelcontextprotocol.sdk:mcp-spring-webmvc:0.17.2")
     }
 }
 
@@ -55,6 +38,11 @@ val integrationTestImplementation: Configuration by configurations.getting {
 }
 
 dependencies {
+    // BOMs — Gradle native platform() replaces io.spring.dependency-management (Boot 4.0+)
+    implementation(platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES))
+    implementation(platform("org.springframework.ai:spring-ai-bom:2.0.0-M4"))
+    testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.4"))
+
     // Core
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -65,22 +53,25 @@ dependencies {
     // Spring AI MCP Server (Streamable HTTP via WebMVC)
     implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
 
-    // Spring AI OpenAI client — OpenAiEmbeddingModel pointed at TEI (RAG-001)
-    // TEI (HuggingFace Text Embeddings Inference) exposes an OpenAI-compatible API.
-    // Using the core module instead of the starter to avoid spring-ai-retry-autoconfigure,
-    // which requires org.springframework.core.retry.RetryListener (Spring 7+, not in Boot 3.5)
+    // Spring AI OpenAI core module — OpenAiEmbeddingModel pointed at TEI (RAG-001).
+    // TEI exposes an OpenAI-compatible API. Core module avoids starter auto-configuration.
     implementation("org.springframework.ai:spring-ai-openai")
 
     // Database
     runtimeOnly("org.postgresql:postgresql:42.7.3")
-    implementation("org.flywaydb:flyway-core")
+    implementation("org.springframework.boot:spring-boot-starter-flyway")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
 
     // AOP — used by RlsContextAspect to inject SET LOCAL per @Tool call (SEC-RLS)
-    implementation("org.springframework.boot:spring-boot-starter-aop")
+    implementation("org.springframework.boot:spring-boot-starter-aspectj")
 
     // In-memory cache for API key list (SEC-003)
     implementation("com.github.ben-manes.caffeine:caffeine")
+
+    // Hibernate 7.2.x JacksonJsonFormatMapper uses com.fasterxml.jackson.databind.ObjectMapper.
+    // Boot 4.1 migrated to Jackson 3.x (tools.jackson.core group) which uses a different package.
+    // Both coexist on the classpath without conflict (different group IDs + packages).
+    runtimeOnly("com.fasterxml.jackson.core:jackson-databind")
 
     // SpotBugs security plugin
     spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0")

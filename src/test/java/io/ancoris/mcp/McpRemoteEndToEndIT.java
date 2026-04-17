@@ -73,7 +73,6 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
         public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
     };
 
-    @Autowired
     private WebTestClient webTestClient;
 
     private boolean semanticSearchAvailable;

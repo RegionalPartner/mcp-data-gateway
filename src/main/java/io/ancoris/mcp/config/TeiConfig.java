@@ -9,7 +9,7 @@ import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.retry.support.RetryTemplate;
+import org.springframework.core.retry.RetryTemplate;
 
 /**
  * Embedding model configuration — HuggingFace Text Embeddings Inference (TEI).
@@ -42,7 +42,7 @@ public class TeiConfig {
                 openAiApi,
                 MetadataMode.EMBED,
                 options,
-                RetryTemplate.defaultInstance(),
+                new RetryTemplate(),
                 observationRegistry);
     }
 }

@@ -2,17 +2,10 @@
 # Add one CVE-ID per line to suppress accepted-risk findings.
 # Each entry MUST include a justification comment and review date.
 
-# CVE-2026-35568 — MCP Core DNS rebinding vulnerability
-# Fix available in mcp-core:1.0.0 but 0.18.x/1.0.0 removed McpJsonMapper.createDefault(),
-# breaking mcp-annotations:0.8.0 used by Spring AI 1.1.4. Pinned to 0.17.2 deliberately.
-# Accepted risk: DNS rebinding requires attacker on the same network segment.
-# Review when Spring AI upgrades to mcp-annotations compatible with SDK ≥1.0.0.
-CVE-2026-35568
-
 # CVE-2026-34483 — Tomcat information disclosure via JsonAccessLogValve encoding
 # CVE-2026-34487 — Tomcat information disclosure via sensitive data in log files
-# Both fixed in Tomcat 10.1.54 / 11.0.21. Spring Boot 3.5.13 (latest) ships 10.1.53.
-# No Spring Boot patch available yet. Remove when Boot 3.5.14+ (Tomcat 10.1.54+) is released.
-# Review: 2026-05-01
+# Both fixed in Tomcat 11.0.21. Spring Boot 4.0.5 ships Tomcat 11.0.20.
+# Remove when Boot 4.0.6+ (Tomcat 11.0.21+) is released.
+# Review: 2026-06-01
 CVE-2026-34483
 CVE-2026-34487

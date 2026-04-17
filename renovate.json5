@@ -17,20 +17,13 @@
       ]
     },
     {
-      // Spring AI minor/major bumps require manual compatibility testing
-      // (Spring AI 2.0 is the next planned upgrade — see project_spring_boot4_upgrade_plan.md).
+      // Spring AI 2.0 is at M4 (not GA). Block auto-bumps until GA lands and
+      // we can do a deliberate upgrade test.
       "groupName": "Spring AI",
       "matchPackagePatterns": ["^org\\.springframework\\.ai.*"],
       "matchUpdateTypes": ["major", "minor"],
       "enabled": false,
       "addLabels": ["spring-ai-manual-review"]
-    },
-    {
-      // MCP SDK is pinned deliberately — 0.18.x removed McpJsonMapper.createDefault(),
-      // breaking mcp-annotations:0.8.0 used by Spring AI 1.1.4 (see build.gradle.kts).
-      "groupName": "MCP SDK",
-      "matchPackagePatterns": ["^io\\.modelcontextprotocol\\.sdk.*"],
-      "enabled": false
     },
     {
       // GitHub Actions: automerge patch and digest updates only.
