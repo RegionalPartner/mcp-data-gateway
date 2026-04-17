@@ -1,6 +1,21 @@
+title = "gitleaks — mcp-data-gateway"
+
+# Suppress findings in paths that intentionally contain fake / demo credentials:
+#
+#   k8s/app/secret.template.yaml — Kubernetes Secret template with REPLACE_WITH_*
+#     placeholders; real values are never committed.
+#
+#   src/main/resources/db/       — Flyway migrations contain demo BCrypt hashes (V2)
+#     and demo key labels embedded in SQL strings (V4).  Production keys live in
+#     environment variables only.
+#
+#   src/test/resources/          — application-test.yaml contains clearly-named test
+#     placeholders (test-pepper-32-chars-minimum-000, test-jwt-secret-32-chars-minimum-00)
+#     and a zero-filled AES key (0101…01) used only by unit tests.
 [allowlist]
-  description = "Demo project known false positives"
+  description = "K8s templates, SQL seed data, and test resource files — intentional fake credentials"
   paths = [
-    "k8s/app/secret.template.yaml",
-    "src/main/resources/db/V2__seed.sql"
+    '''k8s/app/secret\.template\.yaml''',
+    '''src/main/resources/db''',
+    '''src/test/resources''',
   ]

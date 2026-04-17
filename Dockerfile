@@ -1,20 +1,12 @@
-# Stage 1 — build
-FROM eclipse-temurin:25-jdk-alpine AS builder
+# Stage 1 — extract layers from pre-built JAR (produced by CI build-and-test job)
+# Pin to digest for supply-chain safety; update via: docker pull eclipse-temurin:25-jre-alpine
+FROM eclipse-temurin:25-jre-alpine@sha256:5fcc27581b238efbfda93da3a103f59e0b5691fe522a7ac03fe8057b0819c888 AS extractor
 WORKDIR /app
-COPY gradlew .
-COPY gradle gradle
-COPY settings.gradle.kts build.gradle.kts ./
-COPY src src
-RUN chmod +x gradlew && ./gradlew -q -x test bootJar
-
-# Stage 2 — extract layered jar
-FROM eclipse-temurin:25-jdk-alpine AS extractor
-WORKDIR /app
-COPY --from=builder /app/build/libs/*.jar app.jar
+COPY build/libs/*.jar app.jar
 RUN java -Djarmode=layertools -jar app.jar extract
 
-# Stage 3 — minimal runtime image
-FROM eclipse-temurin:25-jre-alpine
+# Stage 2 — minimal runtime image
+FROM eclipse-temurin:25-jre-alpine@sha256:5fcc27581b238efbfda93da3a103f59e0b5691fe522a7ac03fe8057b0819c888
 WORKDIR /app
 
 # Copy layers in dependency-change order (least → most frequent)

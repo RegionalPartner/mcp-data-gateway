@@ -5,12 +5,14 @@ import com.github.spotbugs.snom.SpotBugsTask
 
 plugins {
     java
-    id("org.springframework.boot") version "3.5.0"
+    id("org.springframework.boot") version "3.5.13"
     id("io.spring.dependency-management") version "1.1.7"
     id("jacoco")
     id("checkstyle")
     id("com.github.spotbugs") version "6.5.0"
-    id("org.owasp.dependencycheck") version "9.2.0"
+    id("org.owasp.dependencycheck") version "12.2.1"
+    id("org.cyclonedx.bom") version "3.2.4"
+    id("info.solidsoft.pitest") version "1.19.0"
 }
 
 group = "io.ancoris"
@@ -153,10 +155,13 @@ checkstyle {
 
 // ── OWASP Dependency Check ─────────────────────────────────────────────────
 dependencyCheck {
+    nvd {
+        apiKey = providers.environmentVariable("NVD_API_KEY").getOrElse("")
+        delay = 16000
+    }
     failBuildOnCVSS = 7.0f
-    formats = listOf("XML", "SARIF", "HTML")
+    formats = listOf("HTML", "JSON")
     suppressionFile = "config/owasp/suppression.xml"
-    nvd.apiKey = System.getenv("NVD_API_KEY") ?: ""
 }
 
 // ── check task gate ─────────────────────────────────────────────────────────
@@ -166,6 +171,41 @@ tasks.check {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// ── CycloneDX SBOM ─────────────────────────────────────────────────────────
+// cyclonedxBom (registered by the plugin) outputs build/reports/bom.json by default.
+// copyCyclonedxBom renames and places it at classpath:META-INF/sbom/application.cdx.json
+// so that Spring Boot Actuator auto-configures /actuator/sbom/application.
+tasks.register<Copy>("copyCyclonedxBom") {
+    group = "documentation"
+    description = "Places the CycloneDX BOM on the classpath for Spring Boot Actuator."
+    dependsOn("cyclonedxBom")
+    from(layout.buildDirectory.dir("reports")) {
+        include("bom.json")
+        rename { "application.cdx.json" }
+    }
+    into(layout.buildDirectory.dir("generated/sbom/META-INF/sbom"))
+}
+
+sourceSets {
+    main {
+        resources.srcDir(layout.buildDirectory.dir("generated/sbom"))
+    }
+}
+
+tasks.processResources {
+    dependsOn(tasks.named("copyCyclonedxBom"))
+}
+
+// ── PIT Mutation Testing ────────────────────────────────────────────────────
+// Run via: ./gradlew pitest  (nightly CI only — too slow for every build)
+pitest {
+    junit5PluginVersion.set("1.2.1")
+    targetClasses.set(setOf("io.ancoris.mcp.*"))
+    targetTests.set(setOf("io.ancoris.mcp.*"))
+    mutationThreshold.set(60)
+    outputFormats.set(setOf("HTML", "XML"))
 }
 
 // SEC-023: key values must come from env vars — never hardcoded in source.
