@@ -1,0 +1,47 @@
+repos:
+
+  # ── Secrets scanner ──────────────────────────────────────────────────────────
+  # Uses .gitleaks.toml in the repo root (allowlists k8s templates, test fixtures).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  # ── File hygiene ─────────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Markdown uses two trailing spaces for a hard line break — preserve them.
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # --unsafe allows merge keys (<<: *anchor) used in some K8s manifests.
+        args: [--unsafe]
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        # 500 kB cap — prevents accidental model weights or binary blobs.
+        args: [--maxkb=500]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # ── GenAI slop detector ───────────────────────────────────────────────────────
+  # Scores Markdown files for AI-generated content using three signals:
+  #   • fingerprint phrases (e.g. "delve into", "it's worth noting")
+  #   • transition-word density (furthermore / par ailleurs overuse)
+  #   • sentence-length burstiness (LLMs produce suspiciously uniform sentences)
+  #
+  # --warn-only: prints findings but never blocks the commit locally.
+  # Remove --warn-only in CI to enforce a hard gate on documentation PRs.
+  - repo: local
+    hooks:
+      - id: detect-slop
+        name: GenAI slop detector
+        entry: python3 tools/detect-slop.py --warn-only
+        language: python
+        # Markdown: full prose analysis.
+        # Java/Rust/Kotlin: comment-extraction + density analysis.
+        types_or: [markdown, java, rust, kotlin]
+        pass_filenames: true
+        verbose: true

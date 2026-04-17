@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: up down open status logs help _validate-image _ingress _ingress-ip
+.PHONY: up down open status logs help hooks lint lint-all _validate-image _ingress _ingress-ip
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TFDIR      := infra/terraform
@@ -23,11 +23,14 @@ N := \033[0m
 # ─────────────────────────────────────────────────────────────────────────────
 help:
 	@echo ""
-	@echo "  make up      Provision cluster + deploy app  (~20 min first run)"
-	@echo "  make down    Destroy cluster + stop charges  (~5 min)"
-	@echo "  make open    Port-forward → http://localhost:8080"
-	@echo "  make status  Show pod and service status"
-	@echo "  make logs    Tail gateway logs"
+	@echo "  make up       Provision cluster + deploy app  (~20 min first run)"
+	@echo "  make down     Destroy cluster + stop charges  (~5 min)"
+	@echo "  make open     Port-forward → http://localhost:8080"
+	@echo "  make status   Show pod and service status"
+	@echo "  make logs     Tail gateway logs"
+	@echo "  make hooks    Install pre-commit hooks (run once after clone)"
+	@echo "  make lint     Run pre-commit checks on staged files"
+	@echo "  make lint-all Run pre-commit checks on all files"
 	@echo ""
 	@echo "  App image defaults to IMAGE=$(IMAGE)"
 	@echo "  Override with: make up IMAGE_REPO=ghcr.io/<owner>/mcp-data-gateway IMAGE_TAG=develop"
@@ -38,6 +41,17 @@ help:
 	@echo ""
 
 # ── Main targets ──────────────────────────────────────────────────────────────
+
+hooks:
+	@command -v pre-commit >/dev/null 2>&1 || pipx install pre-commit
+	pre-commit install
+	@echo -e "$(G)✓ Pre-commit hooks installed.$(N) Runs automatically on every git commit."
+
+lint:
+	pre-commit run
+
+lint-all:
+	pre-commit run --all-files
 
 up: _validate-image _tf-apply _kubeconfig _secrets _postgresql _app _smoke
 	@echo -e "$(G)✓ Cluster is up.$(N)"
