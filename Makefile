@@ -12,6 +12,14 @@ GIT_REMOTE  := $(shell git config --get remote.origin.url 2>/dev/null)
 DOMAIN      := $(shell grep -m1 '^\s*- host:' k8s/app/ingress.yaml | awk '{print $$3}' 2>/dev/null)
 GITHUB_OWNER := $(shell printf '%s\n' "$(GIT_REMOTE)" | sed -nE 's#(git@|https://)github.com[:/]([^/]+)/.*#\2#p' | tr '[:upper:]' '[:lower:]')
 IMAGE_REPO ?= $(if $(GITHUB_OWNER),ghcr.io/$(GITHUB_OWNER)/mcp-data-gateway,)
+# ── Production checkpoint ─────────────────────────────────────────────────────
+# Last known-good image running on the OVH cluster as of 2026-04-17:
+#   IMAGE_TAG : sha-1747402
+#   Git commit: 17474020  fix: derive client_secret via HMAC instead of in-memory cache
+#   Digest    : sha256:b61c40d429f17a822a252483ba22384fe6af8ec848a7ad97f16067dfe015fa50
+#   Deployed  : 2026-04-15
+# Emergency rollback:  make up IMAGE_TAG=sha-1747402
+# ─────────────────────────────────────────────────────────────────────────────
 # IMAGE_TAG resolution order (first match wins):
 #   1. Explicit override on the command line:  make up IMAGE_TAG=sha-abc1234
 #   2. DEPLOYED_IMAGE_TAG saved in .deploy.env by the last make up / make promote
