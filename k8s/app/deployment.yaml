@@ -7,6 +7,11 @@ metadata:
     app: mcp-gateway
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0   # never kill old pod before new one passes readinessProbe
   selector:
     matchLabels:
       app: mcp-gateway
