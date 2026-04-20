@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -33,8 +32,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 /**
  * Remote smoke test against the live OVH cluster.
  *
- * <p>Entirely skipped (ABORTED) when OVH is unreachable — which is always the
- * case in CI. Local coverage for the same features is provided by
+ * <p>Entirely skipped (ABORTED) in CI (env var {@code CI=true}) and when OVH
+ * is unreachable. Local coverage for the same features is provided by
  * {@link McpEndToEndIT}, which is always green in CI. Run this class manually
  * when you need to verify a deployment to the cluster.
  *
@@ -73,7 +72,6 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
         public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
     };
 
-    @Autowired
     private WebTestClient webTestClient;
 
     private boolean semanticSearchAvailable;
@@ -84,6 +82,8 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
 
     @BeforeAll
     void setUpAll() throws SSLException {
+        assumeTrue(!"true".equalsIgnoreCase(System.getenv("CI")),
+                "Remote smoke tests are disabled in CI — run locally against OVH.");
         assumeTrue(isOvhHealthy(),
                 "OVH is unreachable — remote smoke tests skipped. "
                 + "Local coverage is provided by McpEndToEndIT.");

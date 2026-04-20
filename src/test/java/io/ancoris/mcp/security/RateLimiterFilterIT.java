@@ -1,13 +1,15 @@
 package io.ancoris.mcp.security;
 
 import io.ancoris.mcp.integration.AbstractIntegrationTest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -21,12 +23,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Overrides the test-profile max-requests back to 60 so the boundary assertions
  * (60 allowed, 61st rejected) remain meaningful.
  */
-@AutoConfigureMockMvc
 @TestPropertySource(properties = "mcp.security.rate-limit.max-requests=60")
 class RateLimiterFilterIT extends AbstractIntegrationTest {
 
     @Autowired
+    private WebApplicationContext wac;
+
+    @Autowired
+    private RateLimiterFilter rateLimiterFilter;
+
     private MockMvc mockMvc;
+
+    @BeforeEach
+    void setUpMockMvc() {
+        mockMvc = MockMvcBuilders.webAppContextSetup(wac)
+                .addFilter(rateLimiterFilter, "/*")
+                .apply(org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity())
+                .build();
+    }
 
     private static final String MCP_PAYLOAD = """
             {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
@@ -91,7 +105,7 @@ class RateLimiterFilterIT extends AbstractIntegrationTest {
     // -----------------------------------------------------------------------
 
     private ResultActions sendMcpPost(String remoteAddr) throws Exception {
-        return mockMvc.perform(post("/mcp/message")
+        return mockMvc.perform(post("/mcp")
                 .with(req -> {
                     req.setRemoteAddr(remoteAddr);
                     return req;

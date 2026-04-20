@@ -2,7 +2,7 @@ package io.ancoris.mcp.integration;
 
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -30,7 +30,7 @@ public abstract class AbstractIntegrationTest {
     // RAG-001: replace the Ollama-backed EmbeddingModel with a mock so integration
     // tests do not require a running Ollama instance.  EmbeddingInitializer handles
     // a null return from embed() gracefully (skips the chunk silently).
-    @MockBean
+    @MockitoBean
     protected EmbeddingModel embeddingModel;
 
     @DynamicPropertySource

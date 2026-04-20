@@ -9,7 +9,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.security.SecurityProperties;
+import org.springframework.boot.security.autoconfigure.web.servlet.SecurityFilterProperties;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
  * context pollution). Exceeding the limit returns HTTP 429.
  */
 @Component
-@Order(SecurityProperties.DEFAULT_FILTER_ORDER - 1)
+@Order(SecurityFilterProperties.DEFAULT_FILTER_ORDER - 1)
 public class RateLimiterFilter extends OncePerRequestFilter {
 
     /** Overridable via {@code mcp.security.rate-limit.max-requests}. */

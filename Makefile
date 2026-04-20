@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: up down open status logs help _validate-image _ingress _ingress-ip
+.PHONY: up down open status logs help hooks lint lint-all preview open-preview promote teardown-preview _validate-image _ingress _ingress-ip
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TFDIR      := infra/terraform
@@ -12,7 +12,21 @@ GIT_REMOTE  := $(shell git config --get remote.origin.url 2>/dev/null)
 DOMAIN      := $(shell grep -m1 '^\s*- host:' k8s/app/ingress.yaml | awk '{print $$3}' 2>/dev/null)
 GITHUB_OWNER := $(shell printf '%s\n' "$(GIT_REMOTE)" | sed -nE 's#(git@|https://)github.com[:/]([^/]+)/.*#\2#p' | tr '[:upper:]' '[:lower:]')
 IMAGE_REPO ?= $(if $(GITHUB_OWNER),ghcr.io/$(GITHUB_OWNER)/mcp-data-gateway,)
-IMAGE_TAG  ?= develop
+# ── Production checkpoint ─────────────────────────────────────────────────────
+# Last known-good image running on the OVH cluster as of 2026-04-17:
+#   IMAGE_TAG : sha-1747402
+#   Git commit: 17474020  fix: derive client_secret via HMAC instead of in-memory cache
+#   Digest    : sha256:b61c40d429f17a822a252483ba22384fe6af8ec848a7ad97f16067dfe015fa50
+#   Deployed  : 2026-04-15
+# Emergency rollback:  make up IMAGE_TAG=sha-1747402
+# ─────────────────────────────────────────────────────────────────────────────
+# IMAGE_TAG resolution order (first match wins):
+#   1. Explicit override on the command line:  make up IMAGE_TAG=sha-abc1234
+#   2. DEPLOYED_IMAGE_TAG saved in .deploy.env by the last make up / make promote
+#      → make down on Friday + make up on Monday redeploys the exact same image
+#   3. SHA of the current local HEAD (fallback for first-ever deploy)
+_SAVED_TAG  := $(shell grep '^DEPLOYED_IMAGE_TAG=' $(ENV_FILE) 2>/dev/null | cut -d= -f2)
+IMAGE_TAG   ?= $(if $(_SAVED_TAG),$(_SAVED_TAG),sha-$(shell git rev-parse --short HEAD))
 IMAGE      ?= $(IMAGE_REPO):$(IMAGE_TAG)
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -23,11 +37,20 @@ N := \033[0m
 # ─────────────────────────────────────────────────────────────────────────────
 help:
 	@echo ""
-	@echo "  make up      Provision cluster + deploy app  (~20 min first run)"
-	@echo "  make down    Destroy cluster + stop charges  (~5 min)"
-	@echo "  make open    Port-forward → http://localhost:8080"
-	@echo "  make status  Show pod and service status"
-	@echo "  make logs    Tail gateway logs"
+	@echo "  make up       Provision cluster + deploy app  (~20 min first run)"
+	@echo "  make down     Destroy cluster + stop charges  (~5 min)"
+	@echo "  make open     Port-forward → http://localhost:8080"
+	@echo "  make status   Show pod and service status"
+	@echo "  make logs     Tail gateway logs"
+	@echo "  make hooks         Install pre-commit hooks (run once after clone)"
+	@echo "  make lint          Run pre-commit checks on staged files"
+	@echo "  make lint-all      Run pre-commit checks on all files"
+	@echo ""
+	@echo "  Zero-downtime deployment:"
+	@echo "  make preview       Deploy new image alongside current (no traffic cut)"
+	@echo "  make open-preview  Port-forward preview → http://localhost:8081"
+	@echo "  make promote       Rolling-update production to IMAGE, teardown preview"
+	@echo "  make teardown-preview  Remove preview deployment + service"
 	@echo ""
 	@echo "  App image defaults to IMAGE=$(IMAGE)"
 	@echo "  Override with: make up IMAGE_REPO=ghcr.io/<owner>/mcp-data-gateway IMAGE_TAG=develop"
@@ -38,6 +61,74 @@ help:
 	@echo ""
 
 # ── Main targets ──────────────────────────────────────────────────────────────
+
+hooks:
+	@command -v pre-commit >/dev/null 2>&1 || pipx install pre-commit
+	pre-commit install
+	@echo -e "$(G)✓ Pre-commit hooks installed.$(N) Runs automatically on every git commit."
+
+lint:
+	pre-commit run
+
+lint-all:
+	pre-commit run --all-files
+
+# ── Zero-downtime blue/green ───────────────────────────────────────────────────
+# preview: boots IMAGE alongside the current production pod — no traffic cut.
+#   Both pods share the same DB and secrets; Flyway migrations run on startup.
+#   Production Service keeps routing to the original pod until 'make promote'.
+#
+# promote: rolling-updates production to IMAGE (maxUnavailable=0 in deployment.yaml
+#   ensures readinessProbe passes on the new pod before the old one is removed),
+#   then tears down the preview deployment automatically.
+#
+# Usage:
+#   make preview  IMAGE_TAG=boot4-upgrade-abc1234
+#   make open-preview                              # test at localhost:8081
+#   make promote  IMAGE_TAG=boot4-upgrade-abc1234  # flip + cleanup
+#   make teardown-preview                          # if you want to abort instead
+
+preview: _validate-image
+	@echo -e "$(G)▶ Deploying preview alongside production...$(N)"
+	$(K) get deployment mcp-gateway -n $(NS) -o yaml \
+	  | python3 -c "\
+import sys, re; t = sys.stdin.read(); \
+t = re.sub(r'(metadata:\n  name:) mcp-gateway\b', r'\1 mcp-gateway-preview', t); \
+t = re.sub(r'(app:) mcp-gateway\b', r'\1 mcp-gateway-preview', t); \
+print(t)" \
+	  | $(K) apply -f -
+	$(K) set image deployment/mcp-gateway-preview mcp-gateway=$(IMAGE) -n $(NS)
+	$(K) set env deployment/mcp-gateway-preview MCP_SECURITY_ENFORCE_TLS=false -n $(NS)
+	$(K) expose deployment mcp-gateway-preview \
+	  --name=mcp-gateway-preview --port=80 --target-port=8080 \
+	  -n $(NS) --dry-run=client -o yaml | $(K) apply -f -
+	$(K) rollout status deployment/mcp-gateway-preview -n $(NS) --timeout=120s
+	@echo -e "$(G)✓ Preview is live.$(N)"
+	@echo -e "  Health: $(K) exec -n $(NS) deploy/mcp-gateway-preview -- wget -qO- http://localhost:8080/actuator/health"
+	@echo -e "  Logs:   $(K) logs -n $(NS) -l app=mcp-gateway-preview --tail=50 -f"
+	@echo -e "  Port:   make open-preview  → http://localhost:8081"
+
+open-preview:
+	@echo -e "$(G)Preview:$(N) http://localhost:8081/mcp"
+	@echo -e "$(G)Health: $(N) http://localhost:8081/actuator/health"
+	@echo    "  Ctrl+C to stop."
+	$(K) port-forward svc/mcp-gateway-preview 8081:80 -n $(NS)
+
+promote: _validate-image
+	@echo -e "$(G)▶ Promoting $(IMAGE) to production (rolling, zero-downtime)...$(N)"
+	$(K) set image deployment/mcp-gateway mcp-gateway=$(IMAGE) -n $(NS)
+	$(K) set env deployment/mcp-gateway MCP_SECURITY_ENFORCE_TLS=false -n $(NS)
+	$(K) rollout status deployment/mcp-gateway -n $(NS) --timeout=120s
+	@sed -i '/^DEPLOYED_IMAGE_TAG=/d' $(ENV_FILE) 2>/dev/null; \
+	  echo "DEPLOYED_IMAGE_TAG=$(IMAGE_TAG)" >> $(ENV_FILE)
+	@echo -e "$(G)✓ Production updated — image tag recorded in $(ENV_FILE).$(N)"
+	@$(MAKE) teardown-preview 2>/dev/null || true
+
+teardown-preview:
+	@echo -e "$(Y)Removing preview deployment and service...$(N)"
+	$(K) delete deployment mcp-gateway-preview -n $(NS) --ignore-not-found
+	$(K) delete service    mcp-gateway-preview -n $(NS) --ignore-not-found
+	@echo -e "$(G)✓ Preview cleaned up.$(N)"
 
 up: _validate-image _tf-apply _kubeconfig _secrets _postgresql _app _smoke
 	@echo -e "$(G)✓ Cluster is up.$(N)"
@@ -187,6 +278,9 @@ _app:
 	@# In-cluster PostgreSQL has no TLS — disable the enforce-tls startup check
 	$(K) set env deployment/mcp-gateway MCP_SECURITY_ENFORCE_TLS=false -n $(NS)
 	$(K) rollout status deployment/mcp-gateway -n $(NS) --timeout=120s
+	@sed -i '/^DEPLOYED_IMAGE_TAG=/d' $(ENV_FILE) 2>/dev/null; \
+	  echo "DEPLOYED_IMAGE_TAG=$(IMAGE_TAG)" >> $(ENV_FILE)
+	@echo -e "  $(G)Deployed image tag recorded in $(ENV_FILE)$(N)"
 
 _smoke:
 	@echo -e "$(G)▶ Smoke test...$(N)"

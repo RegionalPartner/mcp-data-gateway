@@ -5,12 +5,13 @@ import com.github.spotbugs.snom.SpotBugsTask
 
 plugins {
     java
-    id("org.springframework.boot") version "3.5.0"
-    id("io.spring.dependency-management") version "1.1.7"
+    id("org.springframework.boot") version "4.1.0-M4"
     id("jacoco")
     id("checkstyle")
-    id("com.github.spotbugs") version "6.0.9"
-    id("org.owasp.dependencycheck") version "9.2.0"
+    id("com.github.spotbugs") version "6.5.0"
+    id("org.owasp.dependencycheck") version "12.2.1"
+    id("org.cyclonedx.bom") version "3.2.4"
+    id("info.solidsoft.pitest") version "1.19.0"
 }
 
 group = "io.ancoris"
@@ -18,23 +19,7 @@ version = "0.0.1-SNAPSHOT"
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
-}
-
-dependencyManagement {
-    imports {
-        mavenBom("org.springframework.ai:spring-ai-bom:1.1.4")
-        mavenBom("org.testcontainers:testcontainers-bom:1.20.4")
-    }
-    dependencies {
-        // MCP SDK 0.17.2 adds ProtocolVersions.MCP_2025_11_25 (required by Claude Code 2.1.x)
-        // while remaining API-compatible with mcp-annotations:0.8.0 used by Spring AI 1.1.4.
-        // (0.18.x removed McpJsonMapper.createDefault(), breaking mcp-annotations:0.8.0)
-        dependency("io.modelcontextprotocol.sdk:mcp:0.17.2")
-        dependency("io.modelcontextprotocol.sdk:mcp-core:0.17.2")
-        dependency("io.modelcontextprotocol.sdk:mcp-json-jackson2:0.17.2")
-        dependency("io.modelcontextprotocol.sdk:mcp-spring-webmvc:0.17.2")
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
@@ -53,6 +38,11 @@ val integrationTestImplementation: Configuration by configurations.getting {
 }
 
 dependencies {
+    // BOMs — Gradle native platform() replaces io.spring.dependency-management (Boot 4.0+)
+    implementation(platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES))
+    implementation(platform("org.springframework.ai:spring-ai-bom:2.0.0-M4"))
+    testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.4"))
+
     // Core
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -63,24 +53,33 @@ dependencies {
     // Spring AI MCP Server (Streamable HTTP via WebMVC)
     implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
 
-    // Spring AI Ollama core — OllamaEmbeddingModel for RAG semantic search (RAG-001)
-    // Using the core module instead of the starter to avoid spring-ai-retry-autoconfigure,
-    // which requires org.springframework.core.retry.RetryListener (Spring 7+, not in Boot 3.5)
-    implementation("org.springframework.ai:spring-ai-ollama")
+    // Spring AI OpenAI core module — OpenAiEmbeddingModel pointed at TEI (RAG-001).
+    // TEI exposes an OpenAI-compatible API. Core module avoids starter auto-configuration.
+    implementation("org.springframework.ai:spring-ai-openai")
 
     // Database
     runtimeOnly("org.postgresql:postgresql:42.7.3")
-    implementation("org.flywaydb:flyway-core")
+    implementation("org.springframework.boot:spring-boot-starter-flyway")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
 
     // AOP — used by RlsContextAspect to inject SET LOCAL per @Tool call (SEC-RLS)
-    implementation("org.springframework.boot:spring-boot-starter-aop")
+    implementation("org.springframework.boot:spring-boot-starter-aspectj")
 
     // In-memory cache for API key list (SEC-003)
     implementation("com.github.ben-manes.caffeine:caffeine")
 
+    // Hibernate 7.2.x JacksonJsonFormatMapper uses com.fasterxml.jackson.databind.ObjectMapper.
+    // Boot 4.1 migrated to Jackson 3.x (tools.jackson.core group) which uses a different package.
+    // Both coexist on the classpath without conflict (different group IDs + packages).
+    runtimeOnly("com.fasterxml.jackson.core:jackson-databind")
+
     // SpotBugs security plugin
-    spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.12.0")
+    spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0")
+
+    // Force jackson-core 3.x upgrade — GHSA-2m67-wjpj-xhg9 (document length bypass), fixed in 3.1.1
+    constraints {
+        implementation("tools.jackson.core:jackson-core:3.1.1")
+    }
 
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
@@ -89,6 +88,7 @@ dependencies {
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.4.1")
 }
 
 // ── Unit tests (fast — no Testcontainers) ──────────────────────────────────
@@ -152,10 +152,13 @@ checkstyle {
 
 // ── OWASP Dependency Check ─────────────────────────────────────────────────
 dependencyCheck {
+    nvd {
+        apiKey = providers.environmentVariable("NVD_API_KEY").getOrElse("")
+        delay = 16000
+    }
     failBuildOnCVSS = 7.0f
-    formats = listOf("XML", "SARIF", "HTML")
+    formats = listOf("HTML", "JSON")
     suppressionFile = "config/owasp/suppression.xml"
-    nvd.apiKey = System.getenv("NVD_API_KEY") ?: ""
 }
 
 // ── check task gate ─────────────────────────────────────────────────────────
@@ -165,6 +168,24 @@ tasks.check {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// ── CycloneDX SBOM ─────────────────────────────────────────────────────────
+// Spring Boot 4 plugin auto-embeds the CycloneDX BOM at META-INF/sbom/application.cdx.json.
+// Restrict to runtimeClasspath — keeps build-tool and test JARs (plexus-utils, beanutils, etc.)
+// out of the embedded SBOM so they don't generate false-positive Trivy findings.
+tasks.withType<org.cyclonedx.gradle.CyclonedxDirectTask>().configureEach {
+    includeConfigs.set(listOf("runtimeClasspath"))
+}
+
+// ── PIT Mutation Testing ────────────────────────────────────────────────────
+// Run via: ./gradlew pitest  (nightly CI only — too slow for every build)
+pitest {
+    junit5PluginVersion.set("1.2.1")
+    targetClasses.set(setOf("io.ancoris.mcp.*"))
+    targetTests.set(setOf("io.ancoris.mcp.*"))
+    mutationThreshold.set(60)
+    outputFormats.set(setOf("HTML", "XML"))
 }
 
 // SEC-023: key values must come from env vars — never hardcoded in source.

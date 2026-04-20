@@ -1,0 +1,28 @@
+# ── Build stage ───────────────────────────────────────────────────────────────
+# rust:*-alpine uses musl libc — Rust produces statically linked binaries by default.
+FROM rust:1.92-alpine AS builder
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+
+# Cache dependencies before copying source (layer-friendly).
+COPY Cargo.toml ./
+# Placeholder main so `cargo build` can resolve and compile deps.
+RUN mkdir -p src && printf 'fn main(){}' > src/main.rs \
+    && cargo build --release \
+    && rm -rf src
+
+# Build the real binary.
+COPY src/ src/
+# Touch main.rs so Cargo picks up the source change.
+RUN touch src/main.rs && cargo build --release
+
+# ── Final image (<10 MB) ───────────────────────────────────────────────────────
+# FROM scratch: no shell, no package manager, no OS libraries.
+# ring uses getrandom(2) syscall directly — no /dev/urandom needed at runtime.
+FROM scratch
+
+COPY --from=builder /build/target/release/key-rotation /key-rotation
+
+ENTRYPOINT ["/key-rotation"]

@@ -1,0 +1,11 @@
+# .trivyignore — Trivy CVE suppression list
+# Add one CVE-ID per line to suppress accepted-risk findings.
+# Each entry MUST include a justification comment and review date.
+
+# CVE-2026-34483 — Tomcat information disclosure via JsonAccessLogValve encoding
+# CVE-2026-34487 — Tomcat information disclosure via sensitive data in log files
+# Both fixed in Tomcat 11.0.21. Spring Boot 4.0.5 ships Tomcat 11.0.20.
+# Remove when Boot 4.0.6+ (Tomcat 11.0.21+) is released.
+# Review: 2026-06-01
+CVE-2026-34483
+CVE-2026-34487

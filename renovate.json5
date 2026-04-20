@@ -1,0 +1,48 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  // Requires the Renovate GitHub App to be installed on this repository.
+  // Install at: https://github.com/apps/renovate
+  "extends": [
+    "config:recommended",
+    "schedule:weekly"
+  ],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      // Spring Boot + dependency-management must move in lockstep.
+      "groupName": "Spring Boot ecosystem",
+      "matchPackagePatterns": [
+        "^org\\.springframework\\.boot.*",
+        "^io\\.spring\\.dependency-management.*"
+      ]
+    },
+    {
+      // Spring AI 2.0 is at M4 (not GA). Block auto-bumps until GA lands and
+      // we can do a deliberate upgrade test.
+      "groupName": "Spring AI",
+      "matchPackagePatterns": ["^org\\.springframework\\.ai.*"],
+      "matchUpdateTypes": ["major", "minor"],
+      "enabled": false,
+      "addLabels": ["spring-ai-manual-review"]
+    },
+    {
+      // GitHub Actions: automerge patch and digest updates only.
+      // Major bumps (e.g. checkout v5 → v6) require manual review for breaking changes.
+      "groupName": "GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "automerge": true,
+      "automergeType": "branch",
+      "matchUpdateTypes": ["patch", "digest"]
+    },
+    {
+      // Docker base images: pin to digest and automerge digest-only updates
+      // (security patching of the same tag). Tag/major updates need manual review.
+      "groupName": "Docker base images",
+      "matchManagers": ["dockerfile"],
+      "pinDigests": true,
+      "automerge": true,
+      "automergeType": "branch",
+      "matchUpdateTypes": ["digest"]
+    }
+  ]
+}

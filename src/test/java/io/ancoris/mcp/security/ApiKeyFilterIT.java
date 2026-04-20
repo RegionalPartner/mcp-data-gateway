@@ -3,11 +3,13 @@ package io.ancoris.mcp.security;
 import io.ancoris.mcp.integration.AbstractIntegrationTest;
 import io.ancoris.mcp.model.AccessRole;
 import io.ancoris.mcp.oauth.JwtTokenService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -15,11 +17,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@AutoConfigureMockMvc
 class ApiKeyFilterIT extends AbstractIntegrationTest {
 
     @Autowired
-    MockMvc mockMvc;
+    private WebApplicationContext wac;
+
+    private MockMvc mockMvc;
+
+    @BeforeEach
+    void setUpMockMvc() {
+        mockMvc = MockMvcBuilders.webAppContextSetup(wac)
+                .apply(org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity())
+                .build();
+    }
 
     @Autowired
     JwtTokenService jwtTokenService;
@@ -33,7 +43,7 @@ class ApiKeyFilterIT extends AbstractIntegrationTest {
 
     @Test
     void missingApiKeyHeader_returns401() throws Exception {
-        mockMvc.perform(post("/mcp/message")
+        mockMvc.perform(post("/mcp")
                        .contentType(MediaType.APPLICATION_JSON)
                        .content(MCP_TOOLS_LIST))
                .andExpect(status().isUnauthorized());
@@ -41,7 +51,7 @@ class ApiKeyFilterIT extends AbstractIntegrationTest {
 
     @Test
     void invalidApiKey_returns401() throws Exception {
-        mockMvc.perform(post("/mcp/message")
+        mockMvc.perform(post("/mcp")
                        .header("X-API-Key", "not-a-real-key")
                        .contentType(MediaType.APPLICATION_JSON)
                        .content(MCP_TOOLS_LIST))
@@ -78,7 +88,7 @@ class ApiKeyFilterIT extends AbstractIntegrationTest {
 
     @Test
     void missingCredentials_401HasWwwAuthenticateHeader() throws Exception {
-        mockMvc.perform(post("/mcp/message")
+        mockMvc.perform(post("/mcp")
                        .contentType(MediaType.APPLICATION_JSON)
                        .content(MCP_TOOLS_LIST))
                .andExpect(status().isUnauthorized())
@@ -102,7 +112,7 @@ class ApiKeyFilterIT extends AbstractIntegrationTest {
 
     @Test
     void invalidBearerJwt_returns401() throws Exception {
-        mockMvc.perform(post("/mcp/message")
+        mockMvc.perform(post("/mcp")
                        .header("Authorization", "Bearer this.is.not.valid")
                        .contentType(MediaType.APPLICATION_JSON)
                        .content(MCP_TOOLS_LIST))

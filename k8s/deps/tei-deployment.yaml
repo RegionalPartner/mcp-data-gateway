@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tei
+  namespace: mcp-demo
+  labels:
+    app: tei
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tei
+  template:
+    metadata:
+      labels:
+        app: tei
+    spec:
+      containers:
+        - name: tei
+          image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+          args:
+            - --model-id
+            - nomic-ai/nomic-embed-text-v1.5
+            - --port
+            - "8080"
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            # nomic-embed-text-v1.5 (~270 MB) downloads on first cold start.
+            # 60 s delay + 20 × 15 s = 6 min total; sufficient for OVH GRA9 bandwidth.
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 20
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tei
+  namespace: mcp-demo
+spec:
+  selector:
+    app: tei
+  ports:
+    - port: 8080
+      targetPort: 8080

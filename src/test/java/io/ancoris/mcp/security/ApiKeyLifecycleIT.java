@@ -5,10 +5,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -22,10 +23,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Test keys are inserted with HMAC-SHA256 hashes and cleaned up in @AfterEach.
  * The ApiKeyService cache is invalidated before each test to ensure fresh key loading.
  */
-@AutoConfigureMockMvc
 class ApiKeyLifecycleIT extends AbstractIntegrationTest {
 
     @Autowired
+    private WebApplicationContext wac;
+
     private MockMvc mockMvc;
 
     @Autowired
@@ -44,6 +46,13 @@ class ApiKeyLifecycleIT extends AbstractIntegrationTest {
     private static final String MCP_PAYLOAD = """
             {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
             """;
+
+    @BeforeEach
+    void setUpMockMvc() {
+        mockMvc = MockMvcBuilders.webAppContextSetup(wac)
+                .apply(org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity())
+                .build();
+    }
 
     @BeforeEach
     void insertTestKeys() {
@@ -78,7 +87,7 @@ class ApiKeyLifecycleIT extends AbstractIntegrationTest {
 
     @Test
     void expiredKey_returns401() throws Exception {
-        mockMvc.perform(post("/mcp/message")
+        mockMvc.perform(post("/mcp")
                         .header("X-API-Key", EXPIRED_KEY_RAW)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(MCP_PAYLOAD))
@@ -91,7 +100,7 @@ class ApiKeyLifecycleIT extends AbstractIntegrationTest {
 
     @Test
     void revokedKey_returns401() throws Exception {
-        mockMvc.perform(post("/mcp/message")
+        mockMvc.perform(post("/mcp")
                         .header("X-API-Key", REVOKED_KEY_RAW)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(MCP_PAYLOAD))
@@ -106,7 +115,7 @@ class ApiKeyLifecycleIT extends AbstractIntegrationTest {
     void validKeyWithFutureExpiry_isAuthenticated() throws Exception {
         // The MCP endpoint requires auth; a valid key should pass the auth filter.
         // The response may be any non-401 status (e.g. 200 or 400 from MCP protocol).
-        mockMvc.perform(post("/mcp/message")
+        mockMvc.perform(post("/mcp")
                         .header("X-API-Key", FUTURE_KEY_RAW)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(MCP_PAYLOAD))

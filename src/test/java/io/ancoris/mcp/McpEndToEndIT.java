@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -67,7 +68,9 @@ class McpEndToEndIT extends AbstractIntegrationTest {
         Arrays.fill(SEMANTIC_VECTOR, 0.1f);
     }
 
-    @Autowired
+    @LocalServerPort
+    private int localServerPort;
+
     private WebTestClient webTestClient;
 
     @Autowired
@@ -88,7 +91,8 @@ class McpEndToEndIT extends AbstractIntegrationTest {
 
     @BeforeAll
     void setUpAll() {
-        webTestClient = webTestClient.mutate()
+        webTestClient = WebTestClient.bindToServer()
+                .baseUrl("http://localhost:" + localServerPort)
                 .responseTimeout(Duration.ofSeconds(60))
                 .build();
 

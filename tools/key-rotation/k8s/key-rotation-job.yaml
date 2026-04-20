@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: key-rotation
+  namespace: mcp-demo
+  labels:
+    app: key-rotation
+spec:
+  # Auto-clean up 1 h after completion (success or failure).
+  ttlSecondsAfterFinished: 3600
+  # No retries — the job is restart-safe (already-rotated rows are skipped),
+  # but a failed attempt should be investigated before re-running.
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: key-rotation
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534   # nobody
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: key-rotation
+          image: ghcr.io/regionalpartner/mcp-data-gateway/key-rotation:latest
+          imagePullPolicy: Always
+          args:
+            - --batch-size=1000
+          env:
+            - name: OLD_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: key-rotation-secrets
+                  key: old-key
+            - name: NEW_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: key-rotation-secrets
+                  key: new-key
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-gateway-secrets
+                  key: db-url
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: ghcr-pull-secret

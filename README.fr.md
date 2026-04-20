@@ -122,7 +122,7 @@ Ce que la passerelle ajoute, c'est une étape d'ingestion contrôlée et une int
 L'authentification passe par OAuth 2.0 PKCE — Claude Code et les autres clients MCP gèrent cela automatiquement. Les clés API sont pepperées HMAC et hachées BCrypt. **La sécurité au niveau des lignes (RLS) est appliquée au niveau PostgreSQL**, pas dans le code applicatif.
 
 | Rôle | Données structurées | Documents |
-|------|--------------------|-----------| 
+|------|--------------------|-----------|
 | `READ_ONLY` | Toutes les colonnes sauf `salary` | PUBLIC + INTERNAL |
 | `ADMIN` | Toutes les colonnes | PUBLIC + INTERNAL + CONFIDENTIAL |
 
