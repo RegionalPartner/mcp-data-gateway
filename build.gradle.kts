@@ -76,6 +76,11 @@ dependencies {
     // SpotBugs security plugin
     spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0")
 
+    // Force jackson-core 3.x upgrade — GHSA-2m67-wjpj-xhg9 (document length bypass), fixed in 3.1.1
+    constraints {
+        implementation("tools.jackson.core:jackson-core:3.1.1")
+    }
+
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-starter-webflux")  // WebTestClient for SSE
@@ -165,28 +170,11 @@ tasks.withType<Test> {
 }
 
 // ── CycloneDX SBOM ─────────────────────────────────────────────────────────
-// cyclonedxBom (registered by the plugin) outputs build/reports/bom.json by default.
-// copyCyclonedxBom renames and places it at classpath:META-INF/sbom/application.cdx.json
-// so that Spring Boot Actuator auto-configures /actuator/sbom/application.
-tasks.register<Copy>("copyCyclonedxBom") {
-    group = "documentation"
-    description = "Places the CycloneDX BOM on the classpath for Spring Boot Actuator."
-    dependsOn("cyclonedxBom")
-    from(layout.buildDirectory.dir("reports")) {
-        include("bom.json")
-        rename { "application.cdx.json" }
-    }
-    into(layout.buildDirectory.dir("generated/sbom/META-INF/sbom"))
-}
-
-sourceSets {
-    main {
-        resources.srcDir(layout.buildDirectory.dir("generated/sbom"))
-    }
-}
-
-tasks.processResources {
-    dependsOn(tasks.named("copyCyclonedxBom"))
+// Spring Boot 4 plugin auto-embeds the CycloneDX BOM at META-INF/sbom/application.cdx.json.
+// Restrict to runtimeClasspath — keeps build-tool and test JARs (plexus-utils, beanutils, etc.)
+// out of the embedded SBOM so they don't generate false-positive Trivy findings.
+tasks.withType<org.cyclonedx.gradle.CyclonedxDirectTask>().configureEach {
+    includeConfigs.set(listOf("runtimeClasspath"))
 }
 
 // ── PIT Mutation Testing ────────────────────────────────────────────────────
