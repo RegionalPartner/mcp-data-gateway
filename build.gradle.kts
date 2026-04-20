@@ -12,6 +12,7 @@ plugins {
     id("org.owasp.dependencycheck") version "12.2.1"
     id("org.cyclonedx.bom") version "3.2.4"
     id("info.solidsoft.pitest") version "1.19.0"
+    id("me.champeau.jmh") version "0.7.2"
 }
 
 group = "io.ancoris"
@@ -186,6 +187,17 @@ pitest {
     targetTests.set(setOf("io.ancoris.mcp.*"))
     mutationThreshold.set(60)
     outputFormats.set(setOf("HTML", "XML"))
+}
+
+// ── JMH Benchmarks ─────────────────────────────────────────────────────────
+// Run via: ./gradlew jmh  (nightly CI only — forks a JVM per benchmark)
+jmh {
+    jmhVersion.set("1.37")
+    resultFormat.set("JSON")
+    fork.set(1)
+    warmupIterations.set(3)
+    iterations.set(5)
+    includes.set(listOf("io.ancoris.mcp.benchmark.*"))
 }
 
 // SEC-023: key values must come from env vars — never hardcoded in source.

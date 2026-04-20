@@ -32,10 +32,12 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 /**
  * Remote smoke test against the live OVH cluster.
  *
- * <p>Entirely skipped (ABORTED) in CI (env var {@code CI=true}) and when OVH
- * is unreachable. Local coverage for the same features is provided by
- * {@link McpEndToEndIT}, which is always green in CI. Run this class manually
- * when you need to verify a deployment to the cluster.
+ * <p>Skipped (ABORTED) when {@code SKIP_REMOTE_E2E=true} or when OVH is
+ * unreachable. The CI {@code e2e-gate} job runs this class after a successful
+ * rolling deploy, without setting {@code SKIP_REMOTE_E2E}. The standard
+ * {@code build-and-test} job sets {@code SKIP_REMOTE_E2E=true} to avoid
+ * hitting the cluster on every push. Run locally without the env var to smoke
+ * test an ad-hoc cluster change.
  *
  * <p><b>Session strategy</b>: fresh per-call session on every {@link #call}.
  * OVH's older MCP image ties sessions to the creating API key and invalidates
@@ -82,8 +84,8 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
 
     @BeforeAll
     void setUpAll() throws SSLException {
-        assumeTrue(!"true".equalsIgnoreCase(System.getenv("CI")),
-                "Remote smoke tests are disabled in CI — run locally against OVH.");
+        assumeTrue(!"true".equalsIgnoreCase(System.getenv("SKIP_REMOTE_E2E")),
+                "Remote smoke tests disabled via SKIP_REMOTE_E2E.");
         assumeTrue(isOvhHealthy(),
                 "OVH is unreachable — remote smoke tests skipped. "
                 + "Local coverage is provided by McpEndToEndIT.");
