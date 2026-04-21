@@ -82,6 +82,11 @@ spec:
               value: "-Djava.io.tmpdir=/tmp"
             - name: TEI_BASE_URL
               value: "http://tei:8080"
+            - name: MCP_OAUTH_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: mcp-gateway-config
+                  key: oauth-issuer
           readinessProbe:
             httpGet:
               path: /actuator/health

@@ -271,6 +271,7 @@ _app:
 	$(K) create configmap mcp-gateway-config \
 	  --namespace $(NS) \
 	  --from-literal=spring-profiles-active=prod \
+	  --from-literal=oauth-issuer=https://mcp.$$($(K) get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "localhost").nip.io \
 	  --dry-run=client -o yaml | $(K) apply -f -
 	$(K) apply -f k8s/app/deployment.yaml
 	$(K) set image deployment/mcp-gateway mcp-gateway=$(IMAGE) -n $(NS)
