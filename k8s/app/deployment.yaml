@@ -73,6 +73,11 @@ spec:
                 secretKeyRef:
                   name: mcp-gateway-secrets
                   key: mcp-content-key
+            - name: MCP_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-gateway-secrets
+                  key: mcp-jwt-secret
             - name: JAVA_TOOL_OPTIONS
               value: "-Djava.io.tmpdir=/tmp"
             - name: TEI_BASE_URL

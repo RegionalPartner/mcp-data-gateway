@@ -43,7 +43,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: postgresql
+      app: postgresql
   policyTypes:
     - Ingress
   ingress:
@@ -79,7 +79,7 @@ spec:
         - protocol: TCP
           port: 8089
 ---
-# Allow mcp-gateway egress to postgres, ollama, and DNS
+# Allow mcp-gateway egress to postgres, tei, and DNS
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -95,17 +95,17 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: postgresql
+              app: postgresql
       ports:
         - protocol: TCP
           port: 5432
     - to:
         - podSelector:
             matchLabels:
-              app: ollama
+              app: tei
       ports:
         - protocol: TCP
-          port: 11434
+          port: 8080
     - ports:
         - protocol: UDP
           port: 53

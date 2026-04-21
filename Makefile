@@ -186,8 +186,9 @@ _kubeconfig:
 _secrets:
 	@echo -e "$(G)▶ 3/6 Secrets...$(N)"
 	@if [ ! -f $(ENV_FILE) ]; then \
-	  printf 'PG_PASSWORD=%s\nMCP_HMAC_PEPPER=%s\nMCP_CONTENT_KEY=%s\n' \
+	  printf 'PG_PASSWORD=%s\nMCP_HMAC_PEPPER=%s\nMCP_CONTENT_KEY=%s\nMCP_JWT_SECRET=%s\n' \
 	    "$$(openssl rand -hex 24)" \
+	    "$$(openssl rand -hex 32)" \
 	    "$$(openssl rand -hex 32)" \
 	    "$$(openssl rand -hex 32)" > $(ENV_FILE); \
 	  chmod 600 $(ENV_FILE); \
@@ -204,17 +205,14 @@ _secrets:
 	    --from-literal=db-password="$${PG_PASSWORD}" \
 	    --from-literal=mcp-hmac-pepper="$${MCP_HMAC_PEPPER}" \
 	    --from-literal=mcp-content-key="$${MCP_CONTENT_KEY}" \
+	    --from-literal=mcp-jwt-secret="$${MCP_JWT_SECRET}" \
 	    --dry-run=client -o yaml | $(K) apply -f -
 
 _postgresql:
-	@echo -e "$(G)▶ 4/6 Installing PostgreSQL...$(N)"
-	@set -a; source $(ENV_FILE); set +a; \
-	  $(H) upgrade --install postgresql \
-	    oci://registry-1.docker.io/bitnamicharts/postgresql \
-	    -f k8s/deps/postgresql-values.yaml \
-	    --set auth.password="$${PG_PASSWORD}" \
-	    --namespace $(NS) --create-namespace \
-	    --wait --timeout 5m
+	@echo -e "$(G)▶ 4/6 Installing PostgreSQL (pgvector/pg16)...$(N)"
+	$(H) uninstall postgresql --namespace $(NS) 2>/dev/null || true
+	$(K) apply -f k8s/deps/postgresql-pgvector.yaml
+	$(K) rollout status statefulset/postgresql -n $(NS) --timeout=5m
 
 _ingress:
 	@if grep -qE 'your-domain\.com|your-email@example' k8s/app/ingress.yaml k8s/app/cert-manager-issuer.yaml; then \
@@ -266,6 +264,7 @@ _ingress-ip:
 _app:
 	@echo -e "$(G)▶ 5/6 Deploying gateway...$(N)"
 	$(K) apply -f k8s/app/namespace.yaml
+	$(K) apply -f k8s/deps/tei-deployment.yaml
 	$(K) apply -f k8s/app/serviceaccount.yaml
 	$(K) apply -f k8s/app/networkpolicy.yaml
 	$(K) apply -f k8s/app/service.yaml
