@@ -188,6 +188,169 @@ entirely during the `REQUEST` dispatch — the `ASYNC` dispatch only performs I/
 
 ## 4. Data access layer design
 
+### Three-layer defence in depth
+
+Access control is enforced at three independent layers. Each one would block
+unauthorised access on its own; together they form a defence-in-depth stack
+where no single failure can expose data.
+
+```
+AI agent request
+  │
+  ▼
+┌─────────────────────────────────────────────────────┐
+│ Layer 1 — API key → role (ApiKeyFilter)             │
+│  HMAC-SHA256 verify → SecurityContext.set(role)     │
+└─────────────────────────┬───────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────┐
+│ Layer 2 — Column / classification allowlist (Java)  │
+│  PostgresConnector strips hidden columns            │
+│  DocumentSearchTool restricts classification IN(…)  │
+└─────────────────────────┬───────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────┐
+│ Layer 3 — PostgreSQL Row-Level Security             │
+│  RlsContextAspect: SET LOCAL app.mcp_role = '…'    │
+│  RLS policy: USING (role='ADMIN' OR NOT CONFIDENTIAL│
+└─────────────────────────────────────────────────────┘
+```
+
+#### Layer 1 — Authentication and role binding
+
+`ApiKeyFilter` intercepts every request, validates the raw API key with
+HMAC-SHA256 (server-side pepper), and loads the corresponding `ApiKey` record
+— including its `role` — into Spring Security's `SecurityContext`. All
+downstream layers read the role from there; no layer trusts a role supplied by
+the caller.
+
+Fail-safe: a missing or invalid key returns HTTP 401 before any tool method is
+invoked.
+
+#### Layer 2 — Java-layer allowlist (structured data and documents)
+
+**Column allowlist (`PostgresConnector`)**: the schema is hardcoded in
+application source, not derived from database metadata. Before building any SQL,
+`buildColumnList()` removes hidden columns for the role (`salary` for
+`READ_ONLY`). The resulting column list is also used to validate filter column
+names — a filter on `salary` by a READ_ONLY agent throws `SecurityException`
+before any SQL is executed.
+
+**Classification filter (`DocumentSearchTool`)**: the `IN (…)` clause for
+document classification is built from a hardcoded list derived from the role:
+
+```java
+List<String> allowedClassifications = role.canAccessConfidential()
+    ? List.of("'PUBLIC'", "'INTERNAL'", "'CONFIDENTIAL'")
+    : List.of("'PUBLIC'", "'INTERNAL'");
+```
+
+A READ_ONLY agent's query physically cannot contain `'CONFIDENTIAL'` in the
+SQL sent to the database.
+
+#### Layer 3 — PostgreSQL Row-Level Security via `RlsContextAspect`
+
+This layer enforces access control **inside the database engine**, independently
+of the application. Even if layers 1 and 2 were bypassed — by a code bug, a
+prompt-injection attack that reached raw SQL, or direct database access via a
+compromised connection — PostgreSQL would still filter rows.
+
+**How the role reaches PostgreSQL:**
+
+`RlsContextAspect` is an AOP `@Around` advice that intercepts every `@Tool`
+method. Before the tool body runs, it opens a transaction and issues:
+
+```sql
+SET LOCAL app.mcp_role = 'READ_ONLY'   -- or 'ADMIN'
+```
+
+`SET LOCAL` scopes the variable to the current transaction only — it resets
+automatically on commit or rollback. The role value comes exclusively from the
+`AccessRole` enum, never from user input, so string interpolation is safe.
+
+**The RLS policy:**
+
+```sql
+-- V5__rls_document_chunks.sql
+ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_chunks FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY doc_chunks_classification_policy ON document_chunks
+    FOR SELECT
+    USING (
+        COALESCE(current_setting('app.mcp_role', true), 'READ_ONLY') = 'ADMIN'
+        OR classification != 'CONFIDENTIAL'
+    );
+```
+
+PostgreSQL evaluates the `USING` expression as an invisible `WHERE` clause on
+every row before returning it. For a `READ_ONLY` transaction:
+- `current_setting('app.mcp_role')` → `'READ_ONLY'`
+- `'READ_ONLY' = 'ADMIN'` → `false`
+- Only rows where `classification != 'CONFIDENTIAL'` pass
+
+CONFIDENTIAL rows are never returned by the engine, never travel over the wire,
+and are invisible to the application.
+
+`FORCE ROW LEVEL SECURITY` applies the policy even to the table owner
+(`mcpuser`). The only bypass is a PostgreSQL superuser — the migration comments
+and the Known Limitations section both warn that `mcpuser` must not have
+`rolsuper=true`.
+
+**Fail-safe**: if `app.mcp_role` is not set (e.g. the aspect failed before
+`SET LOCAL`), `COALESCE(…, 'READ_ONLY')` defaults to the least-privilege role,
+so a configuration error degrades gracefully rather than opening access.
+
+#### End-to-end flow for a READ_ONLY semantic search
+
+```
+1. POST /mcp  X-API-Key: demo-readonly-key-001
+2. ApiKeyFilter: HMAC verify → SecurityContext{role=READ_ONLY}
+3. RlsContextAspect intercepts DocumentSearchTool.search():
+     → opens transaction
+     → SET LOCAL app.mcp_role = 'READ_ONLY'
+4. DocumentSearchTool builds SQL:
+     WHERE classification IN ('PUBLIC', 'INTERNAL')
+       AND to_tsvector(...) @@ plainto_tsquery(...)
+5. PostgreSQL evaluates RLS policy per row:
+     COALESCE('READ_ONLY', 'READ_ONLY') = 'ADMIN' → false
+     → rows with classification = 'CONFIDENTIAL' filtered at engine
+6. Surviving rows returned → decrypted → sent to AI agent
+7. Transaction commits → app.mcp_role reset automatically
+```
+
+`politique-rh-v3.txt` (CONFIDENTIAL) never appears in step 6 — it does not
+exist from the agent's perspective.
+
+#### Extending to per-client or per-department segmentation
+
+The current model uses one session variable (`app.mcp_role`). The same
+mechanism extends naturally to finer-grained segmentation by adding more
+variables:
+
+```sql
+-- SET LOCAL app.mcp_role    = 'READ_ONLY'  -- existing
+-- SET LOCAL app.mcp_client  = 'client-abc' -- future: per-tenant
+-- SET LOCAL app.mcp_dept    = 'Finance'     -- future: per-department
+
+CREATE POLICY doc_chunks_tenant_policy ON document_chunks
+    FOR SELECT
+    USING (
+        client_id = current_setting('app.mcp_client', true)::uuid
+        AND (
+            COALESCE(current_setting('app.mcp_role', true), 'READ_ONLY') = 'ADMIN'
+            OR classification != 'CONFIDENTIAL'
+        )
+    );
+```
+
+See `docs/per-client-data-segmentation-plan.md` for the full implementation
+plan.
+
+---
+
 ### PostgresConnector: column allowlist architecture
 
 ```java

@@ -119,14 +119,24 @@ What the gateway adds is a controlled ingestion step and a query interface:
 
 ## Security model
 
-Authentication flows through OAuth 2.0 PKCE — handled automatically by Claude Code, claude.ai, and Mistral (the three tested clients). API keys are HMAC-peppered and BCrypt-hashed. **Row-level security is enforced at the PostgreSQL layer**, not in application code.
+Authentication flows through OAuth 2.0 PKCE — handled automatically by Claude Code, claude.ai, and Mistral (the three tested clients). API keys are HMAC-peppered and HMAC-SHA256-hashed.
+
+Data segmentation is enforced at **three independent layers**:
+
+1. **API key → role** — `ApiKeyFilter` validates the key and binds a role (`READ_ONLY` or `ADMIN`) into the Spring Security context before any tool runs.
+2. **Java allowlist** — `PostgresConnector` strips hidden columns (e.g. `salary`) and `DocumentSearchTool` restricts the classification `IN (…)` clause at SQL-build time. An AI agent physically cannot construct a query that asks for disallowed data.
+3. **PostgreSQL Row-Level Security** — `RlsContextAspect` issues `SET LOCAL app.mcp_role = '…'` inside every tool transaction. The RLS policy on `document_chunks` filters CONFIDENTIAL rows at the engine before they are returned, independently of the application. `FORCE ROW LEVEL SECURITY` closes the table-owner bypass.
+
+The result: a CONFIDENTIAL document does not appear as "access denied" — it simply does not exist from a READ_ONLY agent's perspective.
 
 | Role | Structured data | Documents |
 |------|----------------|-----------|
 | `READ_ONLY` | All columns except `salary` | PUBLIC + INTERNAL |
 | `ADMIN` | All columns | PUBLIC + INTERNAL + CONFIDENTIAL |
 
-Full reference — threat model, RLS design, AES-256 encryption, dual audit sinks: [docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md)
+Technical deep-dive (RLS policies, AOP aspect, end-to-end flow, extension to per-tenant segmentation): [docs/ARCHITECTURE.md § 4](docs/ARCHITECTURE.md#three-layer-defence-in-depth)
+
+Full security reference — threat model, AES-256 encryption, dual audit sinks: [docs/SECURITY_HARDENING.md](docs/SECURITY_HARDENING.md)
 
 ---
 
