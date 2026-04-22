@@ -8,6 +8,26 @@ description = "SharePoint → PostgreSQL ingestion daemon for MCP Data Gateway (
 name = "ingestion"
 path = "src/main.rs"
 
+# -----------------------------------------------------------------------------
+# Feature flags — PR5 / D4 PII sanitization (default OFF).
+# -----------------------------------------------------------------------------
+# CI builds must NOT pull these dependencies by default — especially
+# `sanitize-ner` which transitively downloads a 270 MB distilbert model at
+# runtime and builds candle + tokenizers at compile time.
+#
+#   cargo test                              # baseline; Cow::Borrowed fast-path
+#   cargo test --features sanitize-regex    # pure-regex scanner
+#   cargo test --features sanitize-vault    # scanner + DB-backed tokenization
+#   cargo test --features sanitize          # full stack (scanner + NER + vault)
+#
+# `sanitize` is the umbrella flag that turns all three sub-features on.
+[features]
+default = []
+sanitize         = ["sanitize-regex", "sanitize-ner", "sanitize-vault"]
+sanitize-regex   = ["dep:regex", "dep:once_cell"]
+sanitize-ner     = ["dep:candle-core", "dep:candle-nn", "dep:candle-transformers", "dep:tokenizers", "dep:hf-hub"]
+sanitize-vault   = ["dep:aes-gcm", "dep:hmac", "dep:sha2", "dep:rand", "dep:unicode-normalization"]
+
 [dependencies]
 # AES-256-GCM — wire-format byte-compatible with ContentEncryptor.java (SEC-ENC).
 # MUST use ring (not aes-gcm) to maintain FIPS-audited crypto consistency with the gateway.
@@ -66,6 +86,30 @@ url = "2"
 
 # Zoho connector (PR3/D2): async stream utilities for chunked download body.
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
+# -----------------------------------------------------------------------------
+# PR5/D4 — PII sanitization (feature-gated; default OFF).
+# -----------------------------------------------------------------------------
+# Regex scan: FR NIR (Luhn-97), FR/EU IBAN (mod-97), E.164, email, UUID.
+regex                = { version = "1.12",  optional = true }
+once_cell            = { version = "1",     optional = true }
+
+# NER scan: Davlan/distilbert-base-multilingual-cased-ner-hrl (270 MB fp32).
+# `hf-hub` downloads the model on first use — opt-in only.
+candle-core          = { version = "0.9",   optional = true }
+candle-nn            = { version = "0.9",   optional = true }
+candle-transformers  = { version = "0.9",   optional = true }
+tokenizers           = { version = "0.21",  optional = true, default-features = false, features = ["fancy-regex"] }
+hf-hub               = { version = "0.3",   optional = true }
+
+# Vault: AES-256-GCM (original_value_ct) + HMAC-SHA256 (lookup_hash) +
+# Unicode normalization for PER/ORG entity values.  sqlx is already a
+# non-optional top-level dep, so it isn't listed here.
+aes-gcm              = { version = "0.10",  optional = true }
+hmac                 = { version = "0.12",  optional = true }
+sha2                 = { version = "0.10",  optional = true }
+rand                 = { version = "0.8",   optional = true }
+unicode-normalization = { version = "0.1",  optional = true }
 
 [dev-dependencies]
 # Mock HTTP server for connector unit tests (no live HTTP in tests).

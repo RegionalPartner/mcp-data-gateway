@@ -23,6 +23,7 @@ mod connector;
 mod crypto;
 mod db;
 mod embed;
+mod sanitize;
 mod state;
 
 use connector::zoho::{ZohoClient, ZohoCredentials};
