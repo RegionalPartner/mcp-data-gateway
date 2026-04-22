@@ -212,11 +212,19 @@ sonarqube {
         property("sonar.projectKey", "RegionalPartner_mcp-data-gateway")
         property("sonar.organization", "regionalpartner")
         property("sonar.host.url", "https://sonarcloud.io")
+        property("sonar.sources", "src/main/java")
+        property("sonar.tests", "src/test/java,src/integrationTest/java")
+        property("sonar.java.binaries", "build/classes/java/main")
+        property("sonar.java.test.binaries", "build/classes/java/test,build/classes/java/integrationTest")
         property("sonar.coverage.jacoco.xmlReportPaths",
                 "build/reports/jacoco/test/jacocoTestReport.xml")
         property("sonar.java.source", "25")
         property("sonar.exclusions", "src/jmh/**,ingestion/**,tools/**")
     }
+}
+
+tasks.named("sonar") {
+    dependsOn("classes")
 }
 
 // SEC-023: key values must come from env vars — never hardcoded in source.
