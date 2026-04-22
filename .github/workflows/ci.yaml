@@ -355,10 +355,24 @@ jobs:
       - name: Grant Gradle wrapper execute permission
         run: chmod +x gradlew
 
+      - name: Write kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.OVH_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Resolve OVH cluster URL
+        run: |
+          IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          echo "OVH_BASE_URL=https://mcp.${IP}.nip.io" >> $GITHUB_ENV
+          echo "Targeting ${IP} (mcp.${IP}.nip.io)"
+
       - name: Run remote E2E tests
         run: ./gradlew test --tests "io.ancoris.mcp.McpRemoteEndToEndIT"
         env:
           TESTCONTAINERS_RYUK_DISABLED: "true"
+          OVH_BASE_URL: ${{ env.OVH_BASE_URL }}
           # SKIP_REMOTE_E2E intentionally absent — this job is the gate
 
       - name: Publish E2E results

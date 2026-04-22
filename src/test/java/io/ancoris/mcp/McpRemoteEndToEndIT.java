@@ -62,7 +62,10 @@ class McpRemoteEndToEndIT extends AbstractIntegrationTest {
 
     private static final Logger log = LoggerFactory.getLogger(McpRemoteEndToEndIT.class);
 
-    private static final String OVH_BASE      = "https://mcp.37.59.24.118.nip.io";
+    // Configurable via OVH_BASE_URL env var so the CI gate can inject the IP
+    // after each make up without a code change.
+    private static final String OVH_BASE = System.getenv().getOrDefault(
+            "OVH_BASE_URL", "https://mcp.57.128.55.74.nip.io");
     private static final String MCP_PATH      = "/mcp";
     private static final String READ_ONLY_KEY = "demo-readonly-key-001";
     private static final String ADMIN_KEY     = "demo-admin-key-001";
