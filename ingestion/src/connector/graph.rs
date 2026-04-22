@@ -26,7 +26,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tracing::{debug, info};
 
-use super::{ChangeItem, ConnectorError, DeltaResult, SourceConnector};
+use super::{AuthErrorKind, ChangeItem, ConnectorError, DeltaResult, SourceConnector};
 
 pub struct GraphClient {
     /// The SharePoint drive ID — persisted in ingestion_state.connector_id.
@@ -182,7 +182,7 @@ impl GraphClient {
 
             let status = resp.status().as_u16();
             if status == 401 || status == 403 {
-                return Err(ConnectorError::Auth);
+                return Err(ConnectorError::Auth(AuthErrorKind::Unexpected));
             }
             if status == 429 {
                 let retry = resp

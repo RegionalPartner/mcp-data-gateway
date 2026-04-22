@@ -2,13 +2,7 @@
 //
 // Every source connector must implement this trait so the ingestion daemon can
 // drive the download/delta pipeline generically.  The GraphClient in graph.rs
-// is the first implementation; ZohoWorkDrive connector lands in PR3/D2.
-//
-// Unused-dep note: arc-swap and blake3 are declared in Cargo.toml as reserved
-// for the Zoho connector (PR3/D2).  They are referenced here to suppress the
-// unused_crate_dependencies lint until PR3 consumes them.
-use arc_swap as _;
-use blake3 as _;
+// is the first implementation; ZohoClient in zoho.rs is the second.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -16,6 +10,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 pub mod graph;
+pub mod zoho;
 
 /// A single changed or deleted item reported by a source connector's delta feed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,9 +41,30 @@ pub struct DeltaResult {
     pub changes: Vec<ChangeItem>,
     /// True if there are more pages of changes available right now.
     /// The caller must keep calling list_changes until more == false.
-    // Reserved for streaming connectors (PR3/D2); Graph always drains all pages.
+    // NOTE: not read by main.rs yet — the daemon calls list_changes repeatedly
+    // until the cursor stops changing.  The field is part of the public trait
+    // contract and is set correctly by all connectors.
     #[allow(dead_code)]
     pub more: bool,
+}
+
+/// Classified OAuth failure kind — never carries raw server response data.
+///
+/// Callers use this enum to decide whether to retry, back off, or abort:
+/// - `InvalidCode`  → FATAL: the refresh token has been revoked; operator must re-authorize.
+/// - `AccessDenied` → RECOVERABLE: transient refusal; back off and retry.
+/// - `InvalidClient`→ CONFIG: wrong client_id / client_secret; abort the daemon.
+/// - `Unexpected`   → catch-all, treated as RECOVERABLE.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthErrorKind {
+    /// The refresh token is no longer valid.  Operator must re-authorize.
+    InvalidCode,
+    /// Transient access denial.  Backoff and retry.
+    AccessDenied,
+    /// Wrong client credentials.  Configuration error; abort.
+    InvalidClient,
+    /// Unclassified auth failure.  Treated as recoverable.
+    Unexpected,
 }
 
 /// Error type returned by SourceConnector methods.
@@ -56,10 +72,8 @@ pub struct DeltaResult {
 pub enum ConnectorError {
     #[error("http error: status={status}")]
     Http { status: u16 },
-    #[error("auth error")]
-    Auth,
-    // Reserved for connectors that detect stale/invalid cursor tokens (PR3/D2).
-    #[allow(dead_code)]
+    #[error("auth error: {0:?}")]
+    Auth(AuthErrorKind),
     #[error("cursor invalid")]
     CursorInvalid,
     #[error("throttled — retry after {retry_after_secs}s")]

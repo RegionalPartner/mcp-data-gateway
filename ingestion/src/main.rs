@@ -25,6 +25,7 @@ mod db;
 mod embed;
 mod state;
 
+use connector::zoho::{ZohoClient, ZohoCredentials};
 use connector::SourceConnector;
 
 #[derive(Parser, Debug)]
@@ -105,17 +106,32 @@ async fn main() -> Result<()> {
         .context("failed to connect to PostgreSQL")?;
 
     // Build the connector list from env/config.
-    // Currently only microsoft_graph is supported; PR3/D2 adds zoho_workdrive.
-    // The connector_kind column in ingestion_state is used for routing when
-    // multiple connectors are configured; for now we always construct one
-    // GraphClient from the env vars.
-    let connectors: Vec<Box<dyn SourceConnector>> =
+    //
+    // microsoft_graph: always built when SHAREPOINT_DRIVE_ID is set (mandatory arg).
+    // zoho_workdrive:  built only when ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET /
+    //                  ZOHO_REFRESH_TOKEN / ZOHO_ROOT_ID are ALL present in env.
+    //                  Missing vars → connector is skipped with a warning, never a panic.
+    let mut connectors: Vec<Box<dyn SourceConnector>> =
         vec![Box::new(connector::graph::GraphClient::new(
             args.drive_id.clone(),
             args.tenant_id.clone(),
             args.client_id.clone(),
             args.client_secret.clone(),
         ))];
+
+    // Zoho WorkDrive connector (optional — requires env vars at runtime).
+    match build_zoho_connector() {
+        Ok(Some(zoho)) => {
+            info!("Zoho WorkDrive connector configured");
+            connectors.push(Box::new(zoho));
+        }
+        Ok(None) => {
+            info!("Zoho WorkDrive connector skipped — ZOHO_* env vars not set");
+        }
+        Err(e) => {
+            warn!("Zoho WorkDrive connector failed to initialize — skipping: {e}");
+        }
+    }
 
     let embed = embed::EmbedClient::new(&args.tei_base_url, args.embed_batch_size);
     let chunker = chunker::Chunker::new();
@@ -263,6 +279,45 @@ async fn run_cycle(
     }
 
     Ok(processed)
+}
+
+// Build a Zoho WorkDrive connector from environment variables.
+//
+// Returns:
+//   Ok(Some(client)) — all required vars present and connector initialized.
+//   Ok(None)         — none of the ZOHO_* vars are set; skip silently.
+//   Err(e)           — partial config or initialization error; log and skip.
+fn build_zoho_connector() -> anyhow::Result<Option<ZohoClient>> {
+    let client_id = std::env::var("ZOHO_CLIENT_ID").ok();
+    let client_secret = std::env::var("ZOHO_CLIENT_SECRET").ok();
+    let refresh_token = std::env::var("ZOHO_REFRESH_TOKEN").ok();
+    let root_id = std::env::var("ZOHO_ROOT_ID").ok();
+
+    // If none of the vars are set, skip quietly.
+    if client_id.is_none() && client_secret.is_none() && refresh_token.is_none() {
+        return Ok(None);
+    }
+
+    let client_id = client_id
+        .ok_or_else(|| anyhow::anyhow!("ZOHO_CLIENT_ID not set — skipping zoho connector"))?;
+    let client_secret = client_secret
+        .ok_or_else(|| anyhow::anyhow!("ZOHO_CLIENT_SECRET not set — skipping zoho connector"))?;
+    let refresh_token = refresh_token
+        .ok_or_else(|| anyhow::anyhow!("ZOHO_REFRESH_TOKEN not set — skipping zoho connector"))?;
+    let root_id =
+        root_id.ok_or_else(|| anyhow::anyhow!("ZOHO_ROOT_ID not set — skipping zoho connector"))?;
+    let dc = std::env::var("ZOHO_DC").unwrap_or_else(|_| "eu".into());
+    let connector_id =
+        std::env::var("ZOHO_CONNECTOR_ID").unwrap_or_else(|_| format!("zoho:{}", root_id));
+
+    let creds = ZohoCredentials {
+        client_id,
+        client_secret,
+        refresh_token,
+        dc,
+    };
+    let client = ZohoClient::new(creds, connector_id, root_id)?;
+    Ok(Some(client))
 }
 
 // Extract plain text from raw file bytes based on filename extension.

@@ -24,7 +24,7 @@ clap = { version = "4", features = ["derive", "env"] }
 
 # HTTP client — rustls-tls only, no OpenSSL, compatible with musl static build.
 # Used for: Microsoft Graph API, TEI embeddings, SharePoint file downloads.
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
 
 # TODO(tokenizer): replace character-based chunking with the HuggingFace tokenizers crate
 # (bert-base-uncased, 512-token windows, 50-token overlap) once crates.io fixes the compile
@@ -52,11 +52,25 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 async-trait = "0.1"
 thiserror = "2"
 
-# Reserved for Zoho connector (PR3/D2): wait-free token cache.
+# Zoho connector (PR3/D2): wait-free token cache.
 arc-swap = "1"
 
-# Reserved for Zoho connector (PR3/D2): content-hash dedup.
+# Zoho connector (PR3/D2): content-hash dedup.
 blake3 = "1"
+
+# Zoho connector (PR3/D2): temporary file spill for large downloads.
+tempfile = "3"
+
+# Zoho connector (PR3/D2): URL parsing for redirect-hop host validation.
+url = "2"
+
+# Zoho connector (PR3/D2): async stream utilities for chunked download body.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+# Mock HTTP server for connector unit tests (no live HTTP in tests).
+wiremock = "0.6"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [profile.release]
 opt-level = 3
