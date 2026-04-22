@@ -19,3 +19,19 @@ title = "gitleaks — mcp-data-gateway"
     '''src/main/resources/db''',
     '''src/test/resources''',
   ]
+
+# ── Zoho WorkDrive OAuth secrets ──────────────────────────────────────────────
+# Added for PR3/D2 (Zoho connector). Real creds are injected at runtime via
+# K8s Secret → env; they must never appear in the repo.
+
+[[rules]]
+id = "zoho-oauth-token"
+description = "Zoho OAuth access/refresh token"
+regex = '''1000\.[A-Fa-f0-9]{32,}\.[A-Fa-f0-9]{32,}'''
+tags = ["zoho", "token"]
+
+[[rules]]
+id = "zoho-client-secret"
+description = "Zoho client secret"
+regex = '''(?i)zoho[_-]?client[_-]?secret['\"\s:=]+[A-Za-z0-9_-]{20,}'''
+tags = ["zoho", "secret"]
