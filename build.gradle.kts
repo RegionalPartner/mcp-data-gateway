@@ -213,9 +213,9 @@ sonarqube {
         property("sonar.organization", "regionalpartner")
         property("sonar.host.url", "https://sonarcloud.io")
         property("sonar.sources", "src/main/java")
-        property("sonar.tests", "src/test/java,src/integrationTest/java")
+        property("sonar.tests", "src/test/java")
         property("sonar.java.binaries", "build/classes/java/main")
-        property("sonar.java.test.binaries", "build/classes/java/test,build/classes/java/integrationTest")
+        property("sonar.java.test.binaries", "build/classes/java/test")
         property("sonar.coverage.jacoco.xmlReportPaths",
                 "build/reports/jacoco/test/jacocoTestReport.xml")
         property("sonar.java.source", "25")
