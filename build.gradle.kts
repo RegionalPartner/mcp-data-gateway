@@ -13,6 +13,7 @@ plugins {
     id("org.cyclonedx.bom") version "3.2.4"
     id("info.solidsoft.pitest") version "1.19.0"
     id("me.champeau.jmh") version "0.7.2"
+    id("org.sonarqube") version "7.2.3.7755"
 }
 
 group = "io.ancoris"
@@ -198,6 +199,24 @@ jmh {
     warmupIterations.set(3)
     iterations.set(5)
     includes.set(listOf("io.ancoris.mcp.benchmark.*"))
+}
+
+// ── SonarCloud ──────────────────────────────────────────────────────────────
+// Prerequisites (one-time setup):
+//   1. Create org on sonarcloud.io linked to GitHub organisation "RegionalPartner"
+//   2. Add SONAR_TOKEN secret to the GitHub repository
+// The sonar job in ci.yaml runs ./gradlew sonar after build-and-test uploads the
+// JaCoCo XML report as an artifact.
+sonarqube {
+    properties {
+        property("sonar.projectKey", "RegionalPartner_mcp-data-gateway")
+        property("sonar.organization", "regionalpartner")
+        property("sonar.host.url", "https://sonarcloud.io")
+        property("sonar.coverage.jacoco.xmlReportPaths",
+                "build/reports/jacoco/test/jacocoTestReport.xml")
+        property("sonar.java.source", "25")
+        property("sonar.exclusions", "src/jmh/**,ingestion/**,tools/**")
+    }
 }
 
 // SEC-023: key values must come from env vars — never hardcoded in source.

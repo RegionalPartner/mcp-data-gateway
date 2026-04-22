@@ -77,6 +77,20 @@ impl NonceSequence for OneShot {
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+pub fn encrypt_with_iv(key: &[u8; 32], iv: &[u8; IV_LEN], plaintext: &[u8]) -> Result<Vec<u8>> {
+    let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| anyhow!("invalid key length"))?;
+    let mut sealing = SealingKey::new(unbound, OneShot::new(*iv));
+    let mut buf = plaintext.to_vec();
+    sealing
+        .seal_in_place_append_tag(Aad::empty(), &mut buf)
+        .map_err(|_| anyhow!("seal failed"))?;
+    let mut out = Vec::with_capacity(IV_LEN + buf.len());
+    out.extend_from_slice(iv);
+    out.extend_from_slice(&buf);
+    Ok(out)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -99,5 +113,24 @@ mod tests {
     fn parse_key_wrong_length() {
         assert!(parse_key(&"0".repeat(32)).is_err());
         assert!(parse_key(&"0".repeat(66)).is_err());
+    }
+
+    // Cross-language compatibility test vector.
+    // Key: 0101...01 (32 bytes), IV: 020202...02 (12 bytes), plaintext: "hello from rust"
+    // The hex output below is consumed by ContentEncryptorTest.java to verify that
+    // Java's ContentEncryptor.decrypt() can read bytes produced by this Rust module.
+    #[test]
+    fn cross_lang_vector_wire_format_length() {
+        let key = [0x01u8; 32];
+        let iv = [0x02u8; IV_LEN];
+        let plain = b"hello from rust";
+        let wire = encrypt_with_iv(&key, &iv, plain).unwrap();
+        // Wire length must be IV_LEN + plaintext + 16-byte GCM tag
+        assert_eq!(wire.len(), IV_LEN + plain.len() + 16);
+        // First 12 bytes must be the IV we supplied
+        assert_eq!(&wire[..IV_LEN], &iv);
+        // Print hex so the Java test can hardcode it (run with --nocapture to see)
+        let hex: String = wire.iter().map(|b| format!("{b:02x}")).collect();
+        println!("cross_lang_wire_hex={hex}");
     }
 }
