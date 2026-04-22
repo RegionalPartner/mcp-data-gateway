@@ -218,7 +218,8 @@ sonarqube {
         property("sonar.java.test.binaries", "build/classes/java/test")
         property("sonar.coverage.jacoco.xmlReportPaths",
                 "build/reports/jacoco/test/jacocoTestReport.xml")
-        property("sonar.java.source", "25")
+        property("sonar.java.source", "21")
+        property("sonar.scm.exclusions.disabled", "true")
         property("sonar.exclusions", "src/jmh/**,ingestion/**,tools/**")
     }
 }
