@@ -1,29 +1,31 @@
-/// MCP Data Gateway — SharePoint ingestion daemon (Phase 3).
-///
-/// Pipeline per poll cycle:
-///   1. Load delta cursor from ingestion_state (None → full crawl on first run).
-///   2. GET Microsoft Graph drive delta → changed files + deleted item IDs.
-///   3. Deleted items: remove all document_chunks rows for that source_item_id.
-///   4. Changed files: download → extract text → chunk (512-token / 50-token overlap)
-///      → AES-256-GCM encrypt → batch embed via TEI (32/batch) → upsert chunks.
-///   5. Save new @odata.deltaLink cursor to ingestion_state.
-///
-/// Wire format: [12B IV][ciphertext + 16B GCM tag] — byte-compatible with
-/// ContentEncryptor.java and tools/key-rotation.
-///
-/// Supported file types: .txt, .md, .rst (UTF-8 direct).
-/// Unsupported (.pdf, .docx): logged and skipped; add extraction crates in a later phase.
+// MCP Data Gateway — SharePoint ingestion daemon (Phase 3).
+//
+// Pipeline per poll cycle (per connector):
+//   1. Load delta cursor from ingestion_state (None → full crawl on first run).
+//   2. Call connector.list_changes(cursor) → changed + deleted ChangeItems.
+//   3. Deleted items: remove all document_chunks rows for that source_item_id.
+//   4. Changed files: download → extract text → chunk (512-token / 50-token overlap)
+//      → AES-256-GCM encrypt → batch embed via TEI (32/batch) → upsert chunks.
+//   5. Save new cursor to ingestion_state.
+//
+// Wire format: [12B IV][ciphertext + 16B GCM tag] — byte-compatible with
+// ContentEncryptor.java and tools/key-rotation.
+//
+// Supported file types: .txt, .md, .rst (UTF-8 direct).
+// Unsupported (.pdf, .docx): logged and skipped; add extraction crates in a later phase.
 use anyhow::{Context, Result};
 use clap::Parser;
 use sqlx::postgres::PgPoolOptions;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 mod chunker;
+mod connector;
 mod crypto;
 mod db;
 mod embed;
-mod graph;
 mod state;
+
+use connector::SourceConnector;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -56,7 +58,7 @@ struct Args {
     #[arg(long, env = "AZURE_CLIENT_SECRET")]
     client_secret: String,
 
-    /// SharePoint drive ID.
+    /// SharePoint drive ID (connector_id for the microsoft_graph connector).
     /// Obtain with: GET https://graph.microsoft.com/v1.0/sites/{site-id}/drives
     #[arg(long, env = "SHAREPOINT_DRIVE_ID")]
     drive_id: String,
@@ -69,7 +71,7 @@ struct Args {
     #[arg(long, env = "POLL_INTERVAL_SECS", default_value = "300")]
     poll_interval_secs: u64,
 
-    /// Number of chunk texts per TEI embedding request (max ≈128 for TEI cpu-latest).
+    /// Number of chunk texts per TEI embedding request (max ~128 for TEI cpu-latest).
     #[arg(long, default_value = "32")]
     embed_batch_size: usize,
 
@@ -102,20 +104,47 @@ async fn main() -> Result<()> {
         .await
         .context("failed to connect to PostgreSQL")?;
 
-    let graph = graph::GraphClient::new(
-        args.tenant_id.clone(),
-        args.client_id.clone(),
-        args.client_secret.clone(),
-    );
+    // Build the connector list from env/config.
+    // Currently only microsoft_graph is supported; PR3/D2 adds zoho_workdrive.
+    // The connector_kind column in ingestion_state is used for routing when
+    // multiple connectors are configured; for now we always construct one
+    // GraphClient from the env vars.
+    let connectors: Vec<Box<dyn SourceConnector>> =
+        vec![Box::new(connector::graph::GraphClient::new(
+            args.drive_id.clone(),
+            args.tenant_id.clone(),
+            args.client_id.clone(),
+            args.client_secret.clone(),
+        ))];
+
     let embed = embed::EmbedClient::new(&args.tei_base_url, args.embed_batch_size);
     let chunker = chunker::Chunker::new();
 
-    info!("Ingestion daemon started — drive_id={}", args.drive_id);
+    info!(
+        "Ingestion daemon started — {} connector(s), connector_id={}",
+        connectors.len(),
+        args.drive_id
+    );
 
     loop {
-        match run_cycle(&pool, &graph, &embed, &chunker, &args, &content_key).await {
-            Ok(n) => info!("Cycle complete — {n} document(s) processed"),
-            Err(e) => error!("Cycle failed: {e:#}"),
+        for connector in &connectors {
+            match run_cycle(
+                &pool,
+                connector.as_ref(),
+                &embed,
+                &chunker,
+                &args,
+                &content_key,
+            )
+            .await
+            {
+                Ok(n) => info!(
+                    "Cycle complete — connector_id={} {} document(s) processed",
+                    connector.id(),
+                    n
+                ),
+                Err(e) => error!("Cycle failed for connector_id={}: {e:#}", connector.id()),
+            }
         }
         if args.once {
             break;
@@ -128,43 +157,46 @@ async fn main() -> Result<()> {
 
 async fn run_cycle(
     pool: &sqlx::PgPool,
-    graph: &graph::GraphClient,
+    connector: &dyn SourceConnector,
     embed: &embed::EmbedClient,
     chunker: &chunker::Chunker,
     args: &Args,
     content_key: &[u8; 32],
 ) -> Result<usize> {
-    let cursor = state::load_cursor(pool, &args.drive_id)
+    let connector_id = connector.id();
+
+    let cursor = state::load_cursor(pool, connector_id)
         .await
         .context("failed to load delta cursor")?;
 
-    let delta = graph
-        .delta(&args.drive_id, cursor.as_deref())
+    let delta = connector
+        .list_changes(cursor.as_deref())
         .await
-        .context("Graph delta query failed")?;
+        .map_err(|e| anyhow::anyhow!("connector list_changes failed: {e}"))?;
 
     let mut processed = 0usize;
 
-    // Remove chunks for deleted SharePoint items.
-    for item_id in &delta.deleted {
-        info!("Removing chunks for deleted item_id={item_id}");
-        if let Err(e) = db::delete_chunks(pool, item_id).await {
-            error!("Failed to delete chunks for item_id={item_id}: {e:#}");
+    for item in &delta.changes {
+        if item.deleted {
+            info!(
+                "Removing chunks for deleted item remote_id={}",
+                item.remote_id
+            );
+            if let Err(e) = db::delete_chunks(pool, &item.remote_id).await {
+                error!(
+                    "Failed to delete chunks for remote_id={}: {e:#}",
+                    item.remote_id
+                );
+            }
+            continue;
         }
-    }
 
-    // Ingest changed/new files.
-    for item in &delta.changed {
-        let Some(ref dl_url) = item.download_url else {
-            continue; // folder or item without content
-        };
+        info!("Ingesting remote_id={} name={}", item.remote_id, item.name);
 
-        info!("Ingesting item_id={} name={}", item.id, item.name);
-
-        let content = match graph.download(dl_url).await {
+        let content = match connector.download(item).await {
             Ok(c) => c,
             Err(e) => {
-                error!("Download failed for item_id={}: {e:#}", item.id);
+                error!("Download failed for remote_id={}: {e}", item.remote_id);
                 continue;
             }
         };
@@ -178,7 +210,7 @@ async fn run_cycle(
             Ok(c) if !c.is_empty() => c,
             Ok(_) => continue,
             Err(e) => {
-                error!("Chunking failed for item_id={}: {e:#}", item.id);
+                error!("Chunking failed for remote_id={}: {e:#}", item.remote_id);
                 continue;
             }
         };
@@ -190,7 +222,7 @@ async fn run_cycle(
         {
             Ok(v) => v,
             Err(e) => {
-                error!("Encryption failed for item_id={}: {e:#}", item.id);
+                error!("Encryption failed for remote_id={}: {e:#}", item.remote_id);
                 continue;
             }
         };
@@ -198,14 +230,14 @@ async fn run_cycle(
         let embeddings = match embed.embed_batch(&chunks).await {
             Ok(e) => e,
             Err(e) => {
-                error!("Embedding failed for item_id={}: {e:#}", item.id);
+                error!("Embedding failed for remote_id={}: {e:#}", item.remote_id);
                 continue;
             }
         };
 
         if let Err(e) = db::upsert_chunks(
             pool,
-            &item.id,
+            &item.remote_id,
             &item.name,
             &args.classification,
             &encrypted,
@@ -213,26 +245,31 @@ async fn run_cycle(
         )
         .await
         {
-            error!("upsert_chunks failed for item_id={}: {e:#}", item.id);
+            error!(
+                "upsert_chunks failed for remote_id={}: {e:#}",
+                item.remote_id
+            );
             continue;
         }
 
         processed += 1;
     }
 
-    // Persist new delta cursor (even if zero documents were processed — cursor still advances).
-    state::save_cursor(pool, &args.drive_id, &delta.next_link)
-        .await
-        .context("failed to save delta cursor")?;
+    // Persist new delta cursor (even if zero documents processed — cursor still advances).
+    if let Some(ref cursor_str) = delta.next_cursor {
+        state::save_cursor(pool, connector_id, cursor_str)
+            .await
+            .context("failed to save delta cursor")?;
+    }
 
     Ok(processed)
 }
 
-/// Extract plain text from raw file bytes based on filename extension.
-///
-/// .txt / .md / .rst → UTF-8 direct (lossy decode).
-/// .pdf / .docx / .doc → skipped with a warning (TODO: add extraction in a future phase).
-/// Unknown → attempt UTF-8; skip silently if binary.
+// Extract plain text from raw file bytes based on filename extension.
+//
+// .txt / .md / .rst → UTF-8 direct (lossy decode).
+// .pdf / .docx / .doc → skipped with a warning (TODO: add extraction in a future phase).
+// Unknown → attempt UTF-8; skip silently if binary.
 fn extract_text(content: &[u8], filename: &str) -> String {
     let lower = filename.to_lowercase();
     if lower.ends_with(".txt") || lower.ends_with(".md") || lower.ends_with(".rst") {
@@ -242,7 +279,7 @@ fn extract_text(content: &[u8], filename: &str) -> String {
         || lower.ends_with(".doc")
         || lower.ends_with(".pptx")
     {
-        tracing::warn!("Skipping {filename}: binary format extraction not yet implemented");
+        warn!("Skipping {filename}: binary format extraction not yet implemented");
         String::new()
     } else {
         // Attempt UTF-8 for CSV, HTML, JSON, etc.
