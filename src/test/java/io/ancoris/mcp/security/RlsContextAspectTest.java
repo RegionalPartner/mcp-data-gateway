@@ -24,6 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,47 +59,50 @@ class RlsContextAspectTest {
     }
 
     // -----------------------------------------------------------------------
-    // READ_ONLY principal → SET LOCAL app.mcp_role = 'READ_ONLY'
+    // READ_ONLY principal → sets role + client ID
     // -----------------------------------------------------------------------
 
     @Test
-    void applyRlsRole_readOnlyPrincipal_setsReadOnlyRole() throws Throwable {
-        authenticateWith(AccessRole.READ_ONLY);
+    void applyRlsRole_readOnlyPrincipal_setsRoleAndClientId() throws Throwable {
+        UUID keyId = UUID.randomUUID();
+        authenticateWith(AccessRole.READ_ONLY, keyId);
         when(pjp.proceed()).thenReturn(null);
-        // Delegate transaction execution to the callback inline
         when(txManager.getTransaction(any())).thenReturn(txStatus);
         captureAndInvokeCallback();
 
         aspect.applyRlsRole(pjp);
 
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbc).execute(sqlCaptor.capture());
-        assertThat(sqlCaptor.getValue()).isEqualTo("SET LOCAL app.mcp_role = 'READ_ONLY'");
+        verify(jdbc, times(2)).execute(sqlCaptor.capture());
+        assertThat(sqlCaptor.getAllValues().get(0)).isEqualTo("SET LOCAL app.mcp_role = 'READ_ONLY'");
+        assertThat(sqlCaptor.getAllValues().get(1)).isEqualTo("SET LOCAL app.mcp_client_id = '" + keyId + "'");
     }
 
     // -----------------------------------------------------------------------
-    // ADMIN principal → SET LOCAL app.mcp_role = 'ADMIN'
+    // ADMIN principal → sets role + client ID
     // -----------------------------------------------------------------------
 
     @Test
-    void applyRlsRole_adminPrincipal_setsAdminRole() throws Throwable {
-        authenticateWith(AccessRole.ADMIN);
+    void applyRlsRole_adminPrincipal_setsRoleAndClientId() throws Throwable {
+        UUID keyId = UUID.randomUUID();
+        authenticateWith(AccessRole.ADMIN, keyId);
         when(pjp.proceed()).thenReturn(null);
         captureAndInvokeCallback();
 
         aspect.applyRlsRole(pjp);
 
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbc).execute(sqlCaptor.capture());
-        assertThat(sqlCaptor.getValue()).isEqualTo("SET LOCAL app.mcp_role = 'ADMIN'");
+        verify(jdbc, times(2)).execute(sqlCaptor.capture());
+        assertThat(sqlCaptor.getAllValues().get(0)).isEqualTo("SET LOCAL app.mcp_role = 'ADMIN'");
+        assertThat(sqlCaptor.getAllValues().get(1)).isEqualTo("SET LOCAL app.mcp_client_id = '" + keyId + "'");
     }
 
     // -----------------------------------------------------------------------
-    // No authentication → defaults to READ_ONLY (least privilege)
+    // No authentication → READ_ONLY role + nil UUID (fail-closed workspace)
     // -----------------------------------------------------------------------
 
     @Test
-    void applyRlsRole_noAuthentication_defaultsToReadOnly() throws Throwable {
+    void applyRlsRole_noAuthentication_defaultsToReadOnlyAndNilClientId() throws Throwable {
         SecurityContextHolder.clearContext();
         when(pjp.proceed()).thenReturn(null);
         captureAndInvokeCallback();
@@ -106,17 +110,19 @@ class RlsContextAspectTest {
         aspect.applyRlsRole(pjp);
 
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbc).execute(sqlCaptor.capture());
-        assertThat(sqlCaptor.getValue()).isEqualTo("SET LOCAL app.mcp_role = 'READ_ONLY'");
+        verify(jdbc, times(2)).execute(sqlCaptor.capture());
+        assertThat(sqlCaptor.getAllValues().get(0)).isEqualTo("SET LOCAL app.mcp_role = 'READ_ONLY'");
+        assertThat(sqlCaptor.getAllValues().get(1))
+                .isEqualTo("SET LOCAL app.mcp_client_id = '00000000-0000-0000-0000-000000000000'");
     }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
-    private void authenticateWith(AccessRole role) {
+    private void authenticateWith(AccessRole role, UUID id) {
         ApiKey key = new ApiKey();
-        ReflectionTestUtils.setField(key, "id", UUID.randomUUID());
+        ReflectionTestUtils.setField(key, "id", id);
         ReflectionTestUtils.setField(key, "keyHash", "fakehash");
         ReflectionTestUtils.setField(key, "label", "test");
         ReflectionTestUtils.setField(key, "role", role);

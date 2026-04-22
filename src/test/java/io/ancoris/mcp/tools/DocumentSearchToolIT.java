@@ -187,12 +187,12 @@ class DocumentSearchToolIT extends AbstractIntegrationTest {
 
     @Test
     @Transactional
-    void rls_v5Migration_createdClassificationPolicy() {
+    void rls_v13Migration_createdSegmentationPolicy() {
         Integer policyCount = jdbc.queryForObject(
                 """
                 SELECT count(*) FROM pg_policies
                 WHERE tablename = 'document_chunks'
-                  AND policyname = 'doc_chunks_classification_policy'
+                  AND policyname = 'doc_chunks_segmentation_policy'
                 """,
                 Integer.class);
 

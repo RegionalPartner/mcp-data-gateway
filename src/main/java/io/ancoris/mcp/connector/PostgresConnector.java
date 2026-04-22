@@ -13,7 +13,7 @@ public class PostgresConnector {
     // Columns visible per table — defines the strict allowlist
     private static final Map<String, List<String>> ALL_COLUMNS = Map.of(
             "employees",       List.of("id", "name", "department", "email", "salary"),
-            "document_chunks", List.of("id", "doc_name", "classification", "chunk_index", "text_preview", "created_at")
+            "document_chunks", List.of("id", "doc_name", "classification", "chunk_index", "text_preview", "created_at", "workspace_id")
     );
 
     // Columns hidden from READ_ONLY role
