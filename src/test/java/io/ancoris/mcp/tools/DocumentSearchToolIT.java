@@ -176,27 +176,38 @@ class DocumentSearchToolIT extends AbstractIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
-    // SEC-RLS: verify that the RLS policies were created by V5 migration.
+    // SEC-RLS: verify that the V14 RLS policy split is in place.
     //
     // Note: row-filtering enforcement (CONFIDENTIAL blocked for READ_ONLY)
     // requires a non-superuser DB role. The Testcontainers user is a superuser
     // and therefore bypasses FORCE ROW LEVEL SECURITY — this is expected.
     // In production, verify: SELECT rolsuper FROM pg_roles WHERE rolname='mcpuser';
     // must return false, and the policy then enforces the filter at DB level.
+    //
+    // V14 replaced the single compound PERMISSIVE policy (doc_chunks_segmentation_policy)
+    // with PERMISSIVE (doc_chunks_classification) + RESTRICTIVE (doc_chunks_workspace_isolation).
     // -----------------------------------------------------------------------
 
     @Test
     @Transactional
-    void rls_v13Migration_createdSegmentationPolicy() {
-        Integer policyCount = jdbc.queryForObject(
+    void rls_v14Migration_classificationAndWorkspaceIsolationPoliciesExist() {
+        Integer classificationCount = jdbc.queryForObject(
                 """
                 SELECT count(*) FROM pg_policies
                 WHERE tablename = 'document_chunks'
-                  AND policyname = 'doc_chunks_segmentation_policy'
+                  AND policyname = 'doc_chunks_classification'
                 """,
                 Integer.class);
+        assertThat(classificationCount).isEqualTo(1);
 
-        assertThat(policyCount).isEqualTo(1);
+        Integer workspaceIsolationCount = jdbc.queryForObject(
+                """
+                SELECT count(*) FROM pg_policies
+                WHERE tablename = 'document_chunks'
+                  AND policyname = 'doc_chunks_workspace_isolation'
+                """,
+                Integer.class);
+        assertThat(workspaceIsolationCount).isEqualTo(1);
     }
 
     @Test

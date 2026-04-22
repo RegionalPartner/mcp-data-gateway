@@ -11,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementCallback;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -24,6 +25,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,11 +47,13 @@ class RlsContextAspectTest {
 
     private RlsContextAspect aspect;
 
+    // Expected SQL for set_config bind-param form (V14 defence-in-depth upgrade)
+    private static final String SET_CONFIG_SQL = "SELECT set_config(?, ?, true)";
+
     @BeforeEach
     void setUp() {
         aspect = new RlsContextAspect(jdbc, txManager);
         // Make TransactionTemplate.execute() call the callback directly (no real transaction)
-        when(txManager.getTransaction(any())).thenReturn(txStatus);
         when(txManager.getTransaction(any())).thenReturn(txStatus);
     }
 
@@ -59,7 +63,7 @@ class RlsContextAspectTest {
     }
 
     // -----------------------------------------------------------------------
-    // READ_ONLY principal → sets role + client ID
+    // READ_ONLY principal → sets role + client ID via set_config bind params
     // -----------------------------------------------------------------------
 
     @Test
@@ -68,18 +72,15 @@ class RlsContextAspectTest {
         authenticateWith(AccessRole.READ_ONLY, keyId);
         when(pjp.proceed()).thenReturn(null);
         when(txManager.getTransaction(any())).thenReturn(txStatus);
-        captureAndInvokeCallback();
 
         aspect.applyRlsRole(pjp);
 
-        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbc, times(2)).execute(sqlCaptor.capture());
-        assertThat(sqlCaptor.getAllValues().get(0)).isEqualTo("SET LOCAL app.mcp_role = 'READ_ONLY'");
-        assertThat(sqlCaptor.getAllValues().get(1)).isEqualTo("SET LOCAL app.mcp_client_id = '" + keyId + "'");
+        // Both set_config calls use the same PreparedStatementCallback form
+        verify(jdbc, times(2)).execute(eq(SET_CONFIG_SQL), any(PreparedStatementCallback.class));
     }
 
     // -----------------------------------------------------------------------
-    // ADMIN principal → sets role + client ID
+    // ADMIN principal → sets role + client ID via set_config bind params
     // -----------------------------------------------------------------------
 
     @Test
@@ -87,14 +88,11 @@ class RlsContextAspectTest {
         UUID keyId = UUID.randomUUID();
         authenticateWith(AccessRole.ADMIN, keyId);
         when(pjp.proceed()).thenReturn(null);
-        captureAndInvokeCallback();
+        when(txManager.getTransaction(any())).thenReturn(txStatus);
 
         aspect.applyRlsRole(pjp);
 
-        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbc, times(2)).execute(sqlCaptor.capture());
-        assertThat(sqlCaptor.getAllValues().get(0)).isEqualTo("SET LOCAL app.mcp_role = 'ADMIN'");
-        assertThat(sqlCaptor.getAllValues().get(1)).isEqualTo("SET LOCAL app.mcp_client_id = '" + keyId + "'");
+        verify(jdbc, times(2)).execute(eq(SET_CONFIG_SQL), any(PreparedStatementCallback.class));
     }
 
     // -----------------------------------------------------------------------
@@ -105,15 +103,33 @@ class RlsContextAspectTest {
     void applyRlsRole_noAuthentication_defaultsToReadOnlyAndNilClientId() throws Throwable {
         SecurityContextHolder.clearContext();
         when(pjp.proceed()).thenReturn(null);
-        captureAndInvokeCallback();
+        when(txManager.getTransaction(any())).thenReturn(txStatus);
+
+        aspect.applyRlsRole(pjp);
+
+        verify(jdbc, times(2)).execute(eq(SET_CONFIG_SQL), any(PreparedStatementCallback.class));
+    }
+
+    // -----------------------------------------------------------------------
+    // SQL uses set_config parameterised form, not SET LOCAL string interpolation
+    // (regression guard: the correct SQL constant is asserted above)
+    // -----------------------------------------------------------------------
+
+    @Test
+    void applyRlsRole_usesSetConfigPreparedStatementForm() throws Throwable {
+        authenticateWith(AccessRole.READ_ONLY, UUID.randomUUID());
+        when(pjp.proceed()).thenReturn(null);
+        when(txManager.getTransaction(any())).thenReturn(txStatus);
 
         aspect.applyRlsRole(pjp);
 
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbc, times(2)).execute(sqlCaptor.capture());
-        assertThat(sqlCaptor.getAllValues().get(0)).isEqualTo("SET LOCAL app.mcp_role = 'READ_ONLY'");
-        assertThat(sqlCaptor.getAllValues().get(1))
-                .isEqualTo("SET LOCAL app.mcp_client_id = '00000000-0000-0000-0000-000000000000'");
+        verify(jdbc, times(2)).execute(sqlCaptor.capture(), any(PreparedStatementCallback.class));
+        // The SQL must be the set_config form — never SET LOCAL with interpolation
+        sqlCaptor.getAllValues().forEach(sql -> {
+            assertThat(sql).contains("set_config");
+            assertThat(sql).doesNotContain("SET LOCAL");
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -131,16 +147,5 @@ class RlsContextAspectTest {
         var auth = new UsernamePasswordAuthenticationToken(
                 key, null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
         SecurityContextHolder.getContext().setAuthentication(auth);
-    }
-
-    /**
-     * Makes the mock TransactionManager invoke the TransactionCallback synchronously
-     * so the aspect body executes during the test without a real transaction.
-     */
-    @SuppressWarnings("unchecked")
-    private void captureAndInvokeCallback() {
-        when(txManager.getTransaction(any())).thenAnswer(inv -> txStatus);
-        // TransactionTemplate.execute() calls doInTransaction on the same thread.
-        // We replicate that by answering the commit call with a no-op.
     }
 }

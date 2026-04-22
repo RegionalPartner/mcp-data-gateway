@@ -12,7 +12,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies the workspace segmentation schema produced by V11–V13 migrations.
+ * Verifies the workspace segmentation schema produced by V11–V14 migrations.
  *
  * Note: the Testcontainers user is a PostgreSQL superuser and therefore bypasses
  * FORCE ROW LEVEL SECURITY, so row-level filtering cannot be verified here.
@@ -121,20 +121,9 @@ class WorkspaceSegmentationIT extends AbstractIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
-    // V13: segmentation policy exists; old classification policy is gone
+    // V13: old classification policy is gone (replaced by segmentation policy,
+    //      then superseded by V14 PERMISSIVE+RESTRICTIVE split)
     // -----------------------------------------------------------------------
-
-    @Test
-    void v13Migration_segmentationPolicyExists() {
-        Integer count = jdbc.queryForObject(
-                """
-                SELECT count(*) FROM pg_policies
-                WHERE tablename  = 'document_chunks'
-                  AND policyname = 'doc_chunks_segmentation_policy'
-                """,
-                Integer.class);
-        assertThat(count).isEqualTo(1);
-    }
 
     @Test
     void v13Migration_oldClassificationPolicyDropped() {
@@ -146,6 +135,107 @@ class WorkspaceSegmentationIT extends AbstractIntegrationTest {
                 """,
                 Integer.class);
         assertThat(count).isEqualTo(0);
+    }
+
+    // -----------------------------------------------------------------------
+    // V14: compound PERMISSIVE replaced by PERMISSIVE (classification) +
+    //      RESTRICTIVE (workspace isolation) pair
+    // -----------------------------------------------------------------------
+
+    @Test
+    void v14Migration_segmentationPolicyDropped() {
+        Integer count = jdbc.queryForObject(
+                """
+                SELECT count(*) FROM pg_policies
+                WHERE tablename  = 'document_chunks'
+                  AND policyname = 'doc_chunks_segmentation_policy'
+                """,
+                Integer.class);
+        assertThat(count).isEqualTo(0);
+    }
+
+    @Test
+    void v14Migration_classificationPolicyPresent() {
+        Integer count = jdbc.queryForObject(
+                """
+                SELECT count(*) FROM pg_policies
+                WHERE tablename  = 'document_chunks'
+                  AND policyname = 'doc_chunks_classification'
+                """,
+                Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void v14Migration_workspaceIsolationPolicyPresent() {
+        Integer count = jdbc.queryForObject(
+                """
+                SELECT count(*) FROM pg_policies
+                WHERE tablename  = 'document_chunks'
+                  AND policyname = 'doc_chunks_workspace_isolation'
+                """,
+                Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void v14Migration_workspaceIsolationPolicyIsRestrictive() {
+        String permissive = jdbc.queryForObject(
+                """
+                SELECT permissive FROM pg_policies
+                WHERE tablename  = 'document_chunks'
+                  AND policyname = 'doc_chunks_workspace_isolation'
+                """,
+                String.class);
+        // pg_policies.permissive is 'PERMISSIVE' or 'RESTRICTIVE'
+        assertThat(permissive).isEqualTo("RESTRICTIVE");
+    }
+
+    @Test
+    void v14Migration_ingestionStateHasConnectorIdColumn() {
+        Integer count = jdbc.queryForObject(
+                """
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_name  = 'ingestion_state'
+                  AND column_name = 'connector_id'
+                """,
+                Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void v14Migration_ingestionStateHasConnectorKindColumn() {
+        Integer count = jdbc.queryForObject(
+                """
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_name  = 'ingestion_state'
+                  AND column_name = 'connector_kind'
+                """,
+                Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void v14Migration_ingestionStateHasWorkspaceIdColumn() {
+        Integer count = jdbc.queryForObject(
+                """
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_name  = 'ingestion_state'
+                  AND column_name = 'workspace_id'
+                """,
+                Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void v14Migration_appSettingFunctionExists() {
+        Integer count = jdbc.queryForObject(
+                """
+                SELECT count(*) FROM pg_proc
+                WHERE proname = 'app_setting'
+                """,
+                Integer.class);
+        assertThat(count).isEqualTo(1);
     }
 
     // -----------------------------------------------------------------------
