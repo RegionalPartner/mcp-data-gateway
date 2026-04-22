@@ -48,6 +48,16 @@ uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
+# SourceConnector trait support.
+async-trait = "0.1"
+thiserror = "2"
+
+# Reserved for Zoho connector (PR3/D2): wait-free token cache.
+arc-swap = "1"
+
+# Reserved for Zoho connector (PR3/D2): content-hash dedup.
+blake3 = "1"
+
 [profile.release]
 opt-level = 3
 lto = true
