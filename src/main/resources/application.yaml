@@ -19,6 +19,14 @@ spring:
     username: ${DB_USER}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # SEC-RLS: ensure pooled connections always start with a clean session state.
+      # This is the belt-and-suspenders backstop behind RlsContextAspect's afterCompletion
+      # RESET hook and set_config(..., true) LOCAL semantics.
+      connection-init-sql: "RESET ALL"
+      # 30-minute max lifetime; connections are recycled before PostgreSQL's default
+      # idle_in_transaction_session_timeout could cause issues.
+      max-lifetime: 1800000
   jpa:
     hibernate:
       ddl-auto: validate
