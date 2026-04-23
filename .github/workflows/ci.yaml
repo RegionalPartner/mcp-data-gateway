@@ -293,7 +293,7 @@ jobs:
           IMAGE="ghcr.io/${OWNER}/mcp-data-gateway:sha-${SHORT_SHA}"
           echo "Deploying ${IMAGE}"
           kubectl set image deployment/mcp-gateway mcp-gateway="${IMAGE}" -n mcp-demo
-          kubectl rollout status deployment/mcp-gateway -n mcp-demo --timeout=120s
+          kubectl rollout status deployment/mcp-gateway -n mcp-demo --timeout=600s
 
   sonar:
     name: SonarCloud Analysis
