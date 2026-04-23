@@ -63,7 +63,11 @@ class SemanticSearchToolHardTest {
 
     @BeforeEach
     void setUp() {
-        tool = new SemanticSearchTool(embeddingService, vectorSearchConnector, contentStore, auditService);
+        io.ancoris.mcp.security.QueryGuard queryGuard = new io.ancoris.mcp.security.QueryGuard(auditService);
+        io.ancoris.mcp.security.ChunkBudgetEnforcer chunkBudgetEnforcer =
+                mock(io.ancoris.mcp.security.ChunkBudgetEnforcer.class);
+        tool = new SemanticSearchTool(embeddingService, vectorSearchConnector, contentStore, auditService,
+                queryGuard, chunkBudgetEnforcer);
         lenient().when(embeddingService.embed(anyString())).thenReturn(TEST_VECTOR);
         lenient().when(vectorSearchConnector.search(any(), any(), anyInt())).thenReturn(List.of());
     }

@@ -54,7 +54,11 @@ class SemanticSearchToolTest {
 
     @BeforeEach
     void setUp() {
-        tool = new SemanticSearchTool(embeddingService, vectorSearchConnector, contentStore, auditService);
+        io.ancoris.mcp.security.QueryGuard queryGuard = new io.ancoris.mcp.security.QueryGuard(auditService);
+        io.ancoris.mcp.security.ChunkBudgetEnforcer chunkBudgetEnforcer =
+                mock(io.ancoris.mcp.security.ChunkBudgetEnforcer.class);
+        tool = new SemanticSearchTool(embeddingService, vectorSearchConnector, contentStore, auditService,
+                queryGuard, chunkBudgetEnforcer);
         // lenient: some tests throw before embed() is called, so the stub may go unused
         lenient().when(embeddingService.embed(anyString())).thenReturn(TEST_VECTOR);
     }
