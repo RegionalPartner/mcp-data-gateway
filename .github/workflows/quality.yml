@@ -1,0 +1,33 @@
+name: Quality
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+
+  slop-detect:
+    name: AI Slop Detection (non-blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect AI slop on changed files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="HEAD~1"
+          fi
+          readarray -t FILES < <(git diff --name-only "$BASE" HEAD)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No files changed — slop scan skipped"
+            exit 0
+          fi
+          echo "Scanning ${#FILES[@]} file(s)"
+          python3 tools/detect-slop.py --warn-only "${FILES[@]}"

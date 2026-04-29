@@ -5,6 +5,11 @@ import io.ancoris.mcp.connector.ContentStore;
 import io.ancoris.mcp.model.AccessRole;
 import io.ancoris.mcp.model.ApiKey;
 import io.ancoris.mcp.model.DataFragment;
+import io.ancoris.mcp.model.DenialFragment;
+import io.ancoris.mcp.security.BudgetExceededException;
+import io.ancoris.mcp.security.ChunkBudgetEnforcer;
+import io.ancoris.mcp.security.QueryGuard;
+import io.ancoris.mcp.security.ToolInputRejectedException;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,11 +28,19 @@ public class DocumentSearchTool {
     private final JdbcTemplate jdbc;
     private final ContentStore contentStore;
     private final AuditService auditService;
+    private final QueryGuard queryGuard;
+    private final ChunkBudgetEnforcer chunkBudgetEnforcer;
 
-    public DocumentSearchTool(JdbcTemplate jdbc, ContentStore contentStore, AuditService auditService) {
+    public DocumentSearchTool(JdbcTemplate jdbc,
+                              ContentStore contentStore,
+                              AuditService auditService,
+                              QueryGuard queryGuard,
+                              ChunkBudgetEnforcer chunkBudgetEnforcer) {
         this.jdbc = jdbc;
         this.contentStore = contentStore;
         this.auditService = auditService;
+        this.queryGuard = queryGuard;
+        this.chunkBudgetEnforcer = chunkBudgetEnforcer;
     }
 
     @Tool(name = "search_documents", description = "Search internal documents. Returns text fragments only — raw documents are never exposed. "
@@ -42,6 +55,17 @@ public class DocumentSearchTool {
         if (query == null || query.isBlank() || query.length() > MAX_QUERY_LENGTH) {
             throw new IllegalArgumentException(
                     "Search query must be between 1 and " + MAX_QUERY_LENGTH + " characters");
+        }
+
+        // D5: three-tier guard (reject / strip / flag) before embedding or SQL.
+        String sanitizedQuery;
+        boolean flagged;
+        try {
+            QueryGuard.ValidationResult guardResult = queryGuard.validate(query);
+            sanitizedQuery = guardResult.sanitizedQuery();
+            flagged = guardResult.flagged();
+        } catch (ToolInputRejectedException ex) {
+            return List.of(DenialFragment.queryRejected(ex.getReason()));
         }
 
         ApiKey apiKey = currentApiKey();
@@ -61,7 +85,7 @@ public class DocumentSearchTool {
                 LIMIT ?
                 """.formatted(inClause);
 
-        List<Map<String, Object>> rows = jdbc.queryForList(sql, query, limit);
+        List<Map<String, Object>> rows = jdbc.queryForList(sql, sanitizedQuery, limit);
         List<DataFragment> fragments = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             UUID chunkId = (UUID) row.get("id");
@@ -77,8 +101,17 @@ public class DocumentSearchTool {
             ));
         }
 
+        // D5: commit retrieved-chunk count to the hourly budget AFTER retrieval.
+        // REQUIRES_NEW inside ChunkBudgetEnforcer ensures the counter persists even if
+        // the outer RlsContextAspect transaction rolls back.
+        try {
+            chunkBudgetEnforcer.commitChunks(apiKey.getId(), fragments.size());
+        } catch (BudgetExceededException ex) {
+            return List.of(DenialFragment.budgetExceeded(ex.getRetryAfterSeconds()));
+        }
+
         auditService.log("search_documents", apiKey.getId(),
-                Map.of("query", query, "maxResults", limit),
+                Map.of("query", query, "maxResults", limit, "flagged", flagged),
                 "returned " + fragments.size() + " fragments");
 
         return fragments;

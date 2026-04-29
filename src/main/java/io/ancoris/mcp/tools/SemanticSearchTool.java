@@ -7,6 +7,11 @@ import io.ancoris.mcp.connector.VectorSearchConnector;
 import io.ancoris.mcp.model.AccessRole;
 import io.ancoris.mcp.model.ApiKey;
 import io.ancoris.mcp.model.DataFragment;
+import io.ancoris.mcp.model.DenialFragment;
+import io.ancoris.mcp.security.BudgetExceededException;
+import io.ancoris.mcp.security.ChunkBudgetEnforcer;
+import io.ancoris.mcp.security.QueryGuard;
+import io.ancoris.mcp.security.ToolInputRejectedException;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -33,15 +38,21 @@ public class SemanticSearchTool {
     private final VectorSearchConnector vectorSearchConnector;
     private final ContentStore contentStore;
     private final AuditService auditService;
+    private final QueryGuard queryGuard;
+    private final ChunkBudgetEnforcer chunkBudgetEnforcer;
 
     public SemanticSearchTool(EmbeddingService embeddingService,
                               VectorSearchConnector vectorSearchConnector,
                               ContentStore contentStore,
-                              AuditService auditService) {
+                              AuditService auditService,
+                              QueryGuard queryGuard,
+                              ChunkBudgetEnforcer chunkBudgetEnforcer) {
         this.embeddingService = embeddingService;
         this.vectorSearchConnector = vectorSearchConnector;
         this.contentStore = contentStore;
         this.auditService = auditService;
+        this.queryGuard = queryGuard;
+        this.chunkBudgetEnforcer = chunkBudgetEnforcer;
     }
 
     @Tool(name = "semantic_search_documents",
@@ -60,6 +71,17 @@ public class SemanticSearchTool {
                     "Search query must be between 1 and " + MAX_QUERY_LENGTH + " characters");
         }
 
+        // D5: three-tier guard (reject / strip / flag) before embedding or vector search.
+        String sanitizedQuery;
+        boolean flagged;
+        try {
+            QueryGuard.ValidationResult guardResult = queryGuard.validate(query);
+            sanitizedQuery = guardResult.sanitizedQuery();
+            flagged = guardResult.flagged();
+        } catch (ToolInputRejectedException ex) {
+            return List.of(DenialFragment.queryRejected(ex.getReason()));
+        }
+
         ApiKey apiKey = currentApiKey();
         AccessRole role = apiKey.getRole();
         int limit = Math.min(maxResults != null ? maxResults : 5, 10);
@@ -68,7 +90,7 @@ public class SemanticSearchTool {
                 ? List.of("'PUBLIC'", "'INTERNAL'", "'CONFIDENTIAL'")
                 : List.of("'PUBLIC'", "'INTERNAL'");
 
-        float[] queryVector = embeddingService.embed(query);
+        float[] queryVector = embeddingService.embed(sanitizedQuery);
 
         List<Map<String, Object>> rows = vectorSearchConnector.search(queryVector, allowedClassifications, limit);
         List<DataFragment> fragments = new ArrayList<>();
@@ -86,8 +108,15 @@ public class SemanticSearchTool {
             ));
         }
 
+        // D5: commit retrieved-chunk count to the hourly budget AFTER retrieval.
+        try {
+            chunkBudgetEnforcer.commitChunks(apiKey.getId(), fragments.size());
+        } catch (BudgetExceededException ex) {
+            return List.of(DenialFragment.budgetExceeded(ex.getRetryAfterSeconds()));
+        }
+
         auditService.log("semantic_search_documents", apiKey.getId(),
-                Map.of("query", query, "maxResults", limit),
+                Map.of("query", query, "maxResults", limit, "flagged", flagged),
                 "returned " + fragments.size() + " fragments");
 
         return fragments;

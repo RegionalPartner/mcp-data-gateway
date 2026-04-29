@@ -5,7 +5,10 @@ import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 
+import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleName;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleNameEndingWith;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
@@ -40,13 +43,23 @@ public class ArchitectureTest {
                     )
                     .because("connector is a data-access layer; it must not depend on tools, security, or config");
 
-    // tools are the MCP-facing layer — must not reach into internal security classes
+    // tools are the MCP-facing layer — must not reach into internal security impl,
+    // but MAY depend on security exception types and the two D5 guard components
+    // (QueryGuard / ChunkBudgetEnforcer) which are part of the documented per-tool
+    // security API surface.
     @ArchTest
     static final ArchRule TOOLS_DO_NOT_DEPEND_ON_INTERNAL_SECURITY =
             noClasses().that().resideInAPackage(ROOT + ".tools..")
-                    .should().dependOnClassesThat()
-                    .resideInAPackage(ROOT + ".security..")
-                    .because("tools must use Spring Security APIs directly, not internal security classes");
+                    .should().dependOnClassesThat(
+                            resideInAPackage(ROOT + ".security..")
+                                    .and(not(simpleNameEndingWith("Exception")))
+                                    .and(not(simpleName("QueryGuard")))
+                                    .and(not(simpleName("ValidationResult"))) // QueryGuard.ValidationResult
+                                    .and(not(simpleName("ChunkBudgetEnforcer")))
+                    )
+                    .because("tools may depend on security exceptions and the D5 guard components "
+                            + "(QueryGuard / ChunkBudgetEnforcer), but not on internal security infrastructure "
+                            + "(filters, hashers, aspects, services)");
 
     // Repositories belong only in audit and security packages
     @ArchTest

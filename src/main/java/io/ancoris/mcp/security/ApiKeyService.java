@@ -37,6 +37,11 @@ public class ApiKeyService {
                 // SEC-001: reject revoked or expired keys
                 .filter(key -> !key.isRevoked())
                 .filter(key -> key.getExpiresAt() == null || key.getExpiresAt().isAfter(Instant.now()))
+                // D5: defence-in-depth — reject on the generated status column too.
+                // revoked/expiresAt above are the primary path; status is a stored projection
+                // that lets an operator invalidate a key by updating either column without
+                // relying on clock-comparison correctness here.
+                .filter(key -> !"REVOKED".equals(key.getStatus()) && !"EXPIRED".equals(key.getStatus()))
                 .filter(key -> hasher.matches(rawKey, key.getKeyHash()))
                 .findFirst();
     }
@@ -51,6 +56,8 @@ public class ApiKeyService {
                 // SEC-001: reject revoked or expired keys
                 .filter(key -> !key.isRevoked())
                 .filter(key -> key.getExpiresAt() == null || key.getExpiresAt().isAfter(Instant.now()))
+                // D5: defence-in-depth — reject on the generated status column too.
+                .filter(key -> !"REVOKED".equals(key.getStatus()) && !"EXPIRED".equals(key.getStatus()))
                 // Constant-time comparison to avoid hash oracle timing attacks (SEC-HMAC)
                 .filter(key -> MessageDigest.isEqual(
                         keyHash.getBytes(StandardCharsets.UTF_8),

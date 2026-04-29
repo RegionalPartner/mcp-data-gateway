@@ -12,6 +12,8 @@ plugins {
     id("org.owasp.dependencycheck") version "12.2.1"
     id("org.cyclonedx.bom") version "3.2.4"
     id("info.solidsoft.pitest") version "1.19.0"
+    id("me.champeau.jmh") version "0.7.2"
+    id("org.sonarqube") version "7.2.3.7755"
 }
 
 group = "io.ancoris"
@@ -186,6 +188,74 @@ pitest {
     targetTests.set(setOf("io.ancoris.mcp.*"))
     mutationThreshold.set(60)
     outputFormats.set(setOf("HTML", "XML"))
+}
+
+// ── JMH Benchmarks ─────────────────────────────────────────────────────────
+// Run via: ./gradlew jmh  (nightly CI only — forks a JVM per benchmark)
+jmh {
+    jmhVersion.set("1.37")
+    resultFormat.set("JSON")
+    fork.set(1)
+    warmupIterations.set(3)
+    iterations.set(5)
+    includes.set(listOf("io.ancoris.mcp.benchmark.*"))
+}
+
+// ── SonarCloud ──────────────────────────────────────────────────────────────
+// Prerequisites (one-time setup):
+//   1. Create org on sonarcloud.io linked to GitHub organisation "RegionalPartner"
+//   2. Add SONAR_TOKEN secret to the GitHub repository
+// The sonar job in ci.yaml runs ./gradlew sonar after build-and-test uploads the
+// JaCoCo XML report as an artifact.
+sonarqube {
+    properties {
+        property("sonar.projectKey", "RegionalPartner_mcp-data-gateway")
+        property("sonar.organization", "regionalpartner")
+        property("sonar.host.url", "https://sonarcloud.io")
+        property("sonar.sources", "src/main/java")
+        property("sonar.tests", "src/test/java")
+        property("sonar.java.binaries", "build/classes/java/main")
+        property("sonar.coverage.jacoco.xmlReportPaths",
+                "build/reports/jacoco/test/jacocoTestReport.xml")
+        property("sonar.java.source", "21")
+        // Restrict scanner walk to Java only. Without these, IaC/Docker/YAML/
+        // Secrets analyzers walk the whole repo (terraform, k8s, docs, …) and
+        // ~260 files get indexed instead of ~80, diluting the new-code gate.
+        property(
+            "sonar.exclusions",
+            listOf(
+                "src/jmh/**",
+                "ingestion/**",
+                "tools/**",
+                "infra/**",
+                "k8s/**",
+                "docs/**",
+                "config/**",
+                ".github/**",
+                "gradle/**",
+                "**/*.tf",
+                "**/*.yaml",
+                "**/*.yml",
+                "**/*.md",
+                "**/Dockerfile*",
+                "**/*.sh",
+                "**/*.json",
+                "**/*.toml",
+                "**/*.properties",
+            ).joinToString(","),
+        )
+        property(
+            "sonar.coverage.exclusions",
+            listOf(
+                "src/main/java/io/ancoris/mcp/McpGatewayApplication.java",
+                "src/main/java/io/ancoris/mcp/config/**",
+            ).joinToString(","),
+        )
+    }
+}
+
+tasks.named("sonar") {
+    dependsOn("classes")
 }
 
 // SEC-023: key values must come from env vars — never hardcoded in source.

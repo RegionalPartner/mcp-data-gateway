@@ -25,10 +25,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - mcp.37.59.24.118.nip.io
+        - mcp.57.128.55.74.nip.io
       secretName: mcp-gateway-tls
   rules:
-    - host: mcp.37.59.24.118.nip.io
+    - host: mcp.57.128.55.74.nip.io
       http:
         paths:
           - path: /

@@ -20,7 +20,7 @@ spec:
           image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
           args:
             - --model-id
-            - nomic-ai/nomic-embed-text-v1.5
+            - BAAI/bge-base-en-v1.5
             - --port
             - "8080"
           ports:
