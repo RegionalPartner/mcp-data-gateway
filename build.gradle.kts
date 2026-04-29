@@ -218,30 +218,30 @@ sonarqube {
         property("sonar.coverage.jacoco.xmlReportPaths",
                 "build/reports/jacoco/test/jacocoTestReport.xml")
         property("sonar.java.source", "21")
+        // KEEP scm.exclusions.disabled=true — .gitignore has a bare `io/` entry
+        // (the documented gitignore-io-trap), and SCM-aware exclusions would
+        // otherwise drop the entire src/main/java/io/... tree. Tightening must
+        // be done via sonar.exclusions only, not via SCM.
+        property("sonar.scm.exclusions.disabled", "true")
         // Restrict scanner walk to Java only. Without these, IaC/Docker/YAML/
         // Secrets analyzers walk the whole repo (terraform, k8s, docs, …) and
         // ~260 files get indexed instead of ~80, diluting the new-code gate.
+        // Patterns are anchored at projectBaseDir; do NOT use `tools/**` or
+        // `config/**` — those collide with src/main/java/io/ancoris/mcp/tools/
+        // and .../config/ packages when Sonar interprets path patterns.
         property(
             "sonar.exclusions",
             listOf(
                 "src/jmh/**",
                 "ingestion/**",
-                "tools/**",
                 "infra/**",
                 "k8s/**",
                 "docs/**",
-                "config/**",
                 ".github/**",
                 "gradle/**",
+                "/Dockerfile",
                 "**/*.tf",
-                "**/*.yaml",
-                "**/*.yml",
                 "**/*.md",
-                "**/Dockerfile*",
-                "**/*.sh",
-                "**/*.json",
-                "**/*.toml",
-                "**/*.properties",
             ).joinToString(","),
         )
         property(
