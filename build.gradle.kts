@@ -218,8 +218,39 @@ sonarqube {
         property("sonar.coverage.jacoco.xmlReportPaths",
                 "build/reports/jacoco/test/jacocoTestReport.xml")
         property("sonar.java.source", "21")
-        property("sonar.scm.exclusions.disabled", "true")
-        property("sonar.exclusions", "src/jmh/**,ingestion/**,tools/**")
+        // Restrict scanner walk to Java only. Without these, IaC/Docker/YAML/
+        // Secrets analyzers walk the whole repo (terraform, k8s, docs, …) and
+        // ~260 files get indexed instead of ~80, diluting the new-code gate.
+        property(
+            "sonar.exclusions",
+            listOf(
+                "src/jmh/**",
+                "ingestion/**",
+                "tools/**",
+                "infra/**",
+                "k8s/**",
+                "docs/**",
+                "config/**",
+                ".github/**",
+                "gradle/**",
+                "**/*.tf",
+                "**/*.yaml",
+                "**/*.yml",
+                "**/*.md",
+                "**/Dockerfile*",
+                "**/*.sh",
+                "**/*.json",
+                "**/*.toml",
+                "**/*.properties",
+            ).joinToString(","),
+        )
+        property(
+            "sonar.coverage.exclusions",
+            listOf(
+                "src/main/java/io/ancoris/mcp/McpGatewayApplication.java",
+                "src/main/java/io/ancoris/mcp/config/**",
+            ).joinToString(","),
+        )
     }
 }
 
