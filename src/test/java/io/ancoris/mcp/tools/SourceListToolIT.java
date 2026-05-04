@@ -47,14 +47,16 @@ class SourceListToolIT extends AbstractIntegrationTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> sources = (List<Map<String, Object>>) result.get("sources");
 
-        sources.stream()
-                .filter(s -> "object-storage".equals(s.get("type")))
-                .forEach(s -> {
-                    @SuppressWarnings("unchecked")
-                    List<String> classifications =
-                            (List<String>) s.get("accessible_classifications");
-                    assertThat(classifications).doesNotContain("CONFIDENTIAL");
-                });
+        List<Map<String, Object>> docSources = sources.stream()
+                .filter(s -> "encrypted-documents".equals(s.get("type")))
+                .toList();
+        assertThat(docSources).isNotEmpty();
+        docSources.forEach(s -> {
+            @SuppressWarnings("unchecked")
+            List<String> classifications =
+                    (List<String>) s.get("accessible_classifications");
+            assertThat(classifications).doesNotContain("CONFIDENTIAL");
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -70,14 +72,16 @@ class SourceListToolIT extends AbstractIntegrationTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> sources = (List<Map<String, Object>>) result.get("sources");
 
-        sources.stream()
-                .filter(s -> "object-storage".equals(s.get("type")))
-                .forEach(s -> {
-                    @SuppressWarnings("unchecked")
-                    List<String> classifications =
-                            (List<String>) s.get("accessible_classifications");
-                    assertThat(classifications).contains("CONFIDENTIAL");
-                });
+        List<Map<String, Object>> docSources = sources.stream()
+                .filter(s -> "encrypted-documents".equals(s.get("type")))
+                .toList();
+        assertThat(docSources).isNotEmpty();
+        docSources.forEach(s -> {
+            @SuppressWarnings("unchecked")
+            List<String> classifications =
+                    (List<String>) s.get("accessible_classifications");
+            assertThat(classifications).contains("CONFIDENTIAL");
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -93,13 +97,15 @@ class SourceListToolIT extends AbstractIntegrationTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> sources = (List<Map<String, Object>>) result.get("sources");
 
-        sources.stream()
+        List<Map<String, Object>> employees = sources.stream()
                 .filter(s -> "employees".equals(s.get("name")))
-                .forEach(s -> {
-                    @SuppressWarnings("unchecked")
-                    List<String> columns = (List<String>) s.get("columns");
-                    assertThat(columns).doesNotContain("salary");
-                });
+                .toList();
+        assertThat(employees).isNotEmpty();
+        employees.forEach(s -> {
+            @SuppressWarnings("unchecked")
+            List<String> columns = (List<String>) s.get("columns");
+            assertThat(columns).doesNotContain("salary");
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -115,13 +121,15 @@ class SourceListToolIT extends AbstractIntegrationTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> sources = (List<Map<String, Object>>) result.get("sources");
 
-        sources.stream()
+        List<Map<String, Object>> employees = sources.stream()
                 .filter(s -> "employees".equals(s.get("name")))
-                .forEach(s -> {
-                    @SuppressWarnings("unchecked")
-                    List<String> columns = (List<String>) s.get("columns");
-                    assertThat(columns).contains("salary");
-                });
+                .toList();
+        assertThat(employees).isNotEmpty();
+        employees.forEach(s -> {
+            @SuppressWarnings("unchecked")
+            List<String> columns = (List<String>) s.get("columns");
+            assertThat(columns).contains("salary");
+        });
     }
 
     // -----------------------------------------------------------------------

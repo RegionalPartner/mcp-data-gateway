@@ -32,15 +32,18 @@ class OAuthControllerTest {
     private AuthCodeStore authCodeStore;
     private JwtTokenService jwtTokenService;
     private OAuthController controller;
+    private OAuthRedirectValidator redirectValidator;
 
     private static final String ISSUER = "https://test.example.com";
-    private static final String REDIRECT_URI = "https://client.example.com/cb";
+    private static final String REDIRECT_URI = "http://localhost:33418/cb";
 
     @BeforeEach
     void setUp() {
         authCodeStore = new AuthCodeStore();
         jwtTokenService = new JwtTokenService("test-jwt-secret-32-chars-minimum-00");
-        controller = new OAuthController(ISSUER, apiKeyService, authCodeStore, jwtTokenService);
+        redirectValidator = new OAuthRedirectValidator("");
+        controller = new OAuthController(
+                ISSUER, apiKeyService, authCodeStore, jwtTokenService, redirectValidator);
     }
 
     // -------------------------------------------------------------------------
@@ -192,6 +195,44 @@ class OAuthControllerTest {
 
         String location = response.getHeaders().getFirst("Location");
         assertThat(location).isNotNull().doesNotContain("state=");
+    }
+
+    @Test
+    void authorizeSubmit_dangerousScheme_returns400() {
+        var response = controller.authorizeSubmit(
+                "key", "javascript:alert(1)", "challenge", "S256", "");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void authorizeSubmit_externalHttpsHost_returns400() {
+        var response = controller.authorizeSubmit(
+                "key", "https://evil.example.com/cb", "challenge", "S256", "");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void authorizeSubmit_customScheme_succeeds() {
+        ApiKey key = buildAdminKey("hash3");
+        when(apiKeyService.authenticate("key")).thenReturn(Optional.of(key));
+
+        var response = controller.authorizeSubmit(
+                "key", "mistral-le-chat://oauth/callback", "challenge", "S256", "");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
+        assertThat(response.getHeaders().getFirst("Location"))
+                .startsWith("mistral-le-chat://oauth/callback?code=");
+    }
+
+    @Test
+    void authorizeForm_dangerousScheme_returns400WithInvalidRedirectUri() {
+        var response = controller.authorizeForm(
+                "code", "client", "javascript:alert(1)", "challenge", "S256", "");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isEqualTo("invalid_redirect_uri");
     }
 
     // -------------------------------------------------------------------------
