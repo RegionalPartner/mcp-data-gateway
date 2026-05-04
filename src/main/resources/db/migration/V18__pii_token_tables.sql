@@ -1,4 +1,6 @@
--- V16: PII sanitization vault — token counter + token map.
+-- V18: PII sanitization vault — token counter + token map.
+-- (Renumbered from V16 to fix out-of-order Flyway validation: V17 was applied
+--  to prod before this migration arrived, so V16 needed to move past V17.)
 --
 -- These tables back the Rust `ingestion/src/sanitize/vault.rs` module
 -- (feature = "sanitize-vault").  They are created regardless of whether the
