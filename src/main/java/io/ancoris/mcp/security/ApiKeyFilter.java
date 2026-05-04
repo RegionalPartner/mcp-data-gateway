@@ -136,6 +136,12 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
         return uri.startsWith("/actuator/health")
+                // OBS-001: Prometheus scrapes /actuator/prometheus from inside the
+                // cluster (gated by NetworkPolicy). The endpoint exposes aggregate
+                // counters with no tenant identifiers (see McpMetrics cardinality
+                // discipline). Public ingress reachability is acceptable for v1
+                // and tracked as a follow-up to lock down via nginx annotation.
+                || uri.startsWith("/actuator/prometheus")
                 || uri.startsWith("/.well-known/")
                 || uri.startsWith("/oauth/");
     }

@@ -10,7 +10,8 @@ spec:
     - Ingress
     - Egress
 ---
-# Allow nginx-ingress controller to reach mcp-gateway on port 8080
+# Allow nginx-ingress controller AND in-cluster Prometheus to reach mcp-gateway on 8080.
+# Prometheus scrape target: mcp-gateway:80 → 8080, hits /actuator/prometheus.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -30,6 +31,9 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app: prometheus
       ports:
         - protocol: TCP
           port: 8080
@@ -151,6 +155,151 @@ spec:
           port: 443
         - protocol: TCP
           port: 80
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# OBSERVABILITY: prometheus egress to scrape targets (intra-namespace) + DNS +
+# the Kubernetes API server (for endpoints discovery of node-exporter pods).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-egress
+  namespace: mcp-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mcp-gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: node-exporter
+      ports:
+        - protocol: TCP
+          port: 9100
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kube-state-metrics
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres-exporter
+      ports:
+        - protocol: TCP
+          port: 9187
+    # DNS
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # kube-apiserver (kubernetes_sd_configs for endpoints role)
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+---
+# Allow Prometheus to scrape node-exporter / kube-state-metrics / postgres-exporter.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-to-exporters
+  namespace: mcp-demo
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [node-exporter, kube-state-metrics, postgres-exporter]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+---
+# postgres-exporter must reach postgres on 5432.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-exporter-to-postgres
+  namespace: mcp-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres-exporter
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# postgres ingress: existing rule allows mcp-gateway; this adds postgres-exporter.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-exporter-ingress-to-postgres
+  namespace: mcp-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: postgresql
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: postgres-exporter
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# kube-state-metrics needs to reach the Kubernetes API server.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ksm-egress
+  namespace: mcp-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: kube-state-metrics
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
         - protocol: UDP
           port: 53
         - protocol: TCP
