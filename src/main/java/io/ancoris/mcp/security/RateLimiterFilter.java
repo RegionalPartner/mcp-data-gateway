@@ -46,6 +46,9 @@ public class RateLimiterFilter extends OncePerRequestFilter {
                 .expireAfterAccess(2, TimeUnit.MINUTES)
                 .maximumSize(10_000)
                 .build();
+        // SEC-014: unlabeled counter. Do not add per-IP or per-tenant labels —
+        // per-IP would explode cardinality on the public internet, per-tenant
+        // belongs in the audit pipeline.
         this.rateLimitCounter = Counter.builder("mcp.rate.limit.exceeded")
                 .description("Count of requests rejected by the per-IP rate limiter")
                 .register(meterRegistry);

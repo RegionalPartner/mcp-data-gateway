@@ -124,4 +124,34 @@ class ApiKeyFilterIT extends AbstractIntegrationTest {
         mockMvc.perform(get("/.well-known/oauth-authorization-server"))
                .andExpect(status().isOk());
     }
+
+    // -------------------------------------------------------------------------
+    // SEC-014 / OBS-001: /actuator/prometheus exposes labelled metrics
+    // -------------------------------------------------------------------------
+
+    @Test
+    void prometheusEndpoint_exposesLabelledAuthFailureCounter() throws Exception {
+        // Trigger an auth failure with a known reason so the counter has at least
+        // one observed sample with the expected tag.
+        mockMvc.perform(post("/mcp")
+                       .header("X-API-Key", "not-a-real-key")
+                       .contentType(MediaType.APPLICATION_JSON)
+                       .content(MCP_TOOLS_LIST))
+               .andExpect(status().isUnauthorized());
+
+        // Scrape /actuator/prometheus — requires ADMIN per SEC-015.
+        String body = mockMvc.perform(get("/actuator/prometheus")
+                       .header("X-API-Key", "demo-admin-key-001"))
+               .andExpect(status().isOk())
+               .andReturn()
+               .getResponse()
+               .getContentAsString();
+
+        // Reason label is present, application tag is applied, and the counter
+        // shows a non-zero observation (Micrometer normalises dots to underscores).
+        org.assertj.core.api.Assertions.assertThat(body)
+                .contains("mcp_auth_failures_total")
+                .contains("reason=\"invalid_key\"")
+                .contains("application=\"mcp-data-gateway\"");
+    }
 }

@@ -42,10 +42,15 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,sbom
+        include: health,info,metrics,prometheus,sbom
   endpoint:
     health:
       show-details: when_authorized
+  metrics:
+    tags:
+      # Constant tag applied to every metric — lets a multi-target Prometheus
+      # disambiguate this gateway from future siblings (preview, staging, etc.).
+      application: mcp-data-gateway
 
 server:
   # SEC-013: unwrap X-Forwarded-For from RFC1918 proxies (nginx-ingress pods are 10.x.x.x)

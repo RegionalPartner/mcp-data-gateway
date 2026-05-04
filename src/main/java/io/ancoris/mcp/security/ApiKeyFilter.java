@@ -3,8 +3,8 @@ package io.ancoris.mcp.security;
 import io.ancoris.mcp.audit.AuditService;
 import io.ancoris.mcp.model.ApiKey;
 import io.ancoris.mcp.oauth.JwtTokenService;
-import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,11 +29,13 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     private static final String API_KEY_HEADER = "X-API-Key";
     private static final String BEARER_PREFIX = "Bearer ";
 
+    private static final String AUTH_FAILURE_METRIC = "mcp.auth.failures";
+
     private final String issuer;
     private final ApiKeyService apiKeyService;
     private final JwtTokenService jwtTokenService;
     private final AuditService auditService;
-    private final Counter authFailureCounter;
+    private final MeterRegistry meterRegistry;
 
     public ApiKeyFilter(
             @Value("${mcp.oauth.issuer}") String issuer,
@@ -45,10 +47,11 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         this.apiKeyService = apiKeyService;
         this.jwtTokenService = jwtTokenService;
         this.auditService = auditService;
-        // SEC-014: counter for all failed authentication attempts
-        this.authFailureCounter = Counter.builder("mcp.auth.failures")
-                .description("Count of failed API key authentication attempts")
-                .register(meterRegistry);
+        // SEC-014: counter for all failed authentication attempts. Labelled by
+        // failure reason so dashboards can split invalid_key / invalid_bearer /
+        // missing_credentials. Never label by tenant identifier (workspace_id,
+        // api_key_id) — per-tenant slicing belongs in the audit pipeline.
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -105,7 +108,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
 
     /** SEC-007 + SEC-014: write audit entry and increment counter for every auth failure. */
     private void recordFailure(HttpServletRequest request, String reason) {
-        authFailureCounter.increment();
+        meterRegistry.counter(AUTH_FAILURE_METRIC, Tags.of("reason", reason)).increment();
         auditService.log("authentication_failure", null,
                 Map.of("reason", reason, "ip", request.getRemoteAddr()), "rejected");
     }
