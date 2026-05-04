@@ -52,6 +52,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
+    // Micrometer Prometheus registry — exposes /actuator/prometheus for scrape.
+    // Version managed by Spring Boot BOM.
+    implementation("io.micrometer:micrometer-registry-prometheus")
+
     // Spring AI MCP Server (Streamable HTTP via WebMVC)
     implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
 
