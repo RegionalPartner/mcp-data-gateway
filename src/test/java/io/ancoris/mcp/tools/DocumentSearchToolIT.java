@@ -110,6 +110,7 @@ class DocumentSearchToolIT extends AbstractIntegrationTest {
 
         List<DataFragment> results = documentSearchTool.searchDocuments("sécurité", 10);
 
+        assertThat(results).isNotEmpty();
         assertThat(results).allMatch(f ->
                 f.fragmentText() == null || f.fragmentText().length() <= 600);
     }

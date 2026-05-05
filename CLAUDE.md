@@ -73,6 +73,8 @@ make status / make logs
 
 `IMAGE_TAG` resolution order: explicit arg → `DEPLOYED_IMAGE_TAG` in `.deploy.env` → `sha-$(git rev-parse --short HEAD)`.
 
+`make up` also installs an in-cluster observability stack (Prometheus + node-exporter + kube-state-metrics + postgres-exporter, hand-rolled YAML in `k8s/deps/`). Scrape every 30s, 1 Gi PVC, 7-day retention. Reach via `make open-prometheus` → `localhost:9090`. Grafana arrives in a follow-up PR. Custom MCP-domain counters: `mcp_tool_calls_total{tool, outcome}`, `mcp_auth_failures_total{reason}`, `mcp_rate_limit_exceeded_total`. **Never label any metric with `workspace_id` / `api_key_id` / `mcp_client_id`** — per-tenant slicing belongs in the audit pipeline, not Prometheus.
+
 ## Architecture
 
 ### Package layout and dependency rules (enforced by ArchUnit)

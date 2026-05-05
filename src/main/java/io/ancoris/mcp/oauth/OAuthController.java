@@ -69,16 +69,19 @@ public class OAuthController {
     private final ApiKeyService apiKeyService;
     private final AuthCodeStore authCodeStore;
     private final JwtTokenService jwtTokenService;
+    private final OAuthRedirectValidator redirectValidator;
 
     public OAuthController(
             @Value("${mcp.oauth.issuer}") String issuer,
             ApiKeyService apiKeyService,
             AuthCodeStore authCodeStore,
-            JwtTokenService jwtTokenService) {
+            JwtTokenService jwtTokenService,
+            OAuthRedirectValidator redirectValidator) {
         this.issuer = issuer;
         this.apiKeyService = apiKeyService;
         this.authCodeStore = authCodeStore;
         this.jwtTokenService = jwtTokenService;
+        this.redirectValidator = redirectValidator;
     }
 
     /** RFC 8414: OAuth 2.0 Authorization Server Metadata — discovered by MCP clients. */
@@ -149,6 +152,11 @@ public class OAuthController {
                         .contentType(MediaType.TEXT_PLAIN)
                         .body("unsupported_response_type or code_challenge_method");
             }
+            if (!redirectValidator.isAllowed(redirectUri)) {
+                return ResponseEntity.badRequest()
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .body("invalid_redirect_uri");
+            }
             // Cache params so a subsequent truncated-URL request can recover the form
             pendingForms.put(clientId, new AuthorizeParams(
                     responseType, clientId, redirectUri, codeChallenge, codeChallengeMethod, state));
@@ -159,16 +167,16 @@ public class OAuthController {
         // Recovery path: Firefox sends a truncated URL (e.g. client_id cut mid-UUID).
         // Find any cached entry whose full client_id starts with the partial value received.
         if (present(clientId)) {
-            AuthorizeParams cached = pendingForms.asMap().values().stream()
+            Optional<AuthorizeParams> cached = pendingForms.asMap().values().stream()
                     .filter(p -> p.clientId().startsWith(clientId))
-                    .findFirst()
-                    .orElse(null);
-            if (cached != null) {
+                    .findFirst();
+            if (cached.isPresent()) {
+                AuthorizeParams p = cached.get();
                 log.debug("OAuth form recovered for truncated client_id prefix '{}'",
                         clientId.replaceAll("[\r\n\t]", "_"));
                 return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
-                        .body(buildAuthorizeForm(cached.clientId(), cached.redirectUri(),
-                                cached.codeChallenge(), cached.codeChallengeMethod(), cached.state()));
+                        .body(buildAuthorizeForm(p.clientId(), p.redirectUri(),
+                                p.codeChallenge(), p.codeChallengeMethod(), p.state()));
             }
         }
 
@@ -190,6 +198,9 @@ public class OAuthController {
             @RequestParam("code_challenge") String codeChallenge,
             @RequestParam("code_challenge_method") String codeChallengeMethod,
             @RequestParam(value = "state", required = false, defaultValue = "") String state) {
+        if (!redirectValidator.isAllowed(redirectUri)) {
+            return ResponseEntity.badRequest().build();
+        }
         Optional<ApiKey> keyOpt = apiKeyService.authenticate(rawKey);
         if (keyOpt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();

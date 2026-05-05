@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: up down open status logs help hooks lint lint-all preview open-preview promote teardown-preview _validate-image _ingress _ingress-ip
+.PHONY: up down open open-prometheus status logs help hooks lint lint-all preview open-preview promote teardown-preview _validate-image _ingress _ingress-ip _observability
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TFDIR      := infra/terraform
@@ -37,11 +37,12 @@ N := \033[0m
 # ─────────────────────────────────────────────────────────────────────────────
 help:
 	@echo ""
-	@echo "  make up       Provision cluster + deploy app  (~20 min first run)"
-	@echo "  make down     Destroy cluster + stop charges  (~5 min)"
-	@echo "  make open     Port-forward → http://localhost:8080"
-	@echo "  make status   Show pod and service status"
-	@echo "  make logs     Tail gateway logs"
+	@echo "  make up               Provision cluster + deploy app  (~20 min first run)"
+	@echo "  make down             Destroy cluster + stop charges  (~5 min)"
+	@echo "  make open             Port-forward gateway → http://localhost:8080"
+	@echo "  make open-prometheus  Port-forward Prometheus → http://localhost:9090"
+	@echo "  make status           Show pod and service status"
+	@echo "  make logs             Tail gateway logs"
 	@echo "  make hooks         Install pre-commit hooks (run once after clone)"
 	@echo "  make lint          Run pre-commit checks on staged files"
 	@echo "  make lint-all      Run pre-commit checks on all files"
@@ -130,10 +131,11 @@ teardown-preview:
 	$(K) delete service    mcp-gateway-preview -n $(NS) --ignore-not-found
 	@echo -e "$(G)✓ Preview cleaned up.$(N)"
 
-up: _validate-image _tf-apply _kubeconfig _secrets _postgresql _app _smoke
+up: _validate-image _tf-apply _kubeconfig _secrets _postgresql _observability _app _smoke
 	@echo -e "$(G)✓ Cluster is up.$(N)"
-	@echo -e "  Local:   make open → http://localhost:8080/mcp"
-	@echo -e "  Public:  make _ingress  (once you have a domain set in k8s/app/ingress.yaml)"
+	@echo -e "  Local:       make open → http://localhost:8080/mcp"
+	@echo -e "  Prometheus:  make open-prometheus → http://localhost:9090"
+	@echo -e "  Public:      make _ingress  (once you have a domain set in k8s/app/ingress.yaml)"
 
 down:
 	@echo -e "$(Y)Destroying cluster — all Kubernetes data will be lost.$(N)"
@@ -148,6 +150,11 @@ open:
 	@[ -n "$(DOMAIN)" ] && echo -e "$(G)Public: $(N) https://$(DOMAIN)/mcp" || true
 	@echo    "  Ctrl+C to stop."
 	$(K) port-forward svc/mcp-gateway 8080:80 -n $(NS)
+
+open-prometheus:
+	@echo -e "$(G)Prometheus:$(N) http://localhost:9090"
+	@echo    "  Ctrl+C to stop."
+	$(K) port-forward svc/prometheus 9090:9090 -n $(NS)
 
 status:
 	$(K) get pods,svc -n $(NS)
@@ -172,11 +179,11 @@ _validate-image:
 	@echo -e "$(G)Using app image:$(N) $(IMAGE)"
 
 _tf-apply:
-	@echo -e "$(G)▶ 1/6 Provisioning OVH cluster...$(N)"
+	@echo -e "$(G)▶ 1/7 Provisioning OVH cluster...$(N)"
 	cd $(TFDIR) && terraform init -input=false && terraform apply -auto-approve
 
 _kubeconfig:
-	@echo -e "$(G)▶ 2/6 Fetching kubeconfig...$(N)"
+	@echo -e "$(G)▶ 2/7 Fetching kubeconfig...$(N)"
 	@mkdir -p $(HOME)/.kube
 	cd $(TFDIR) && terraform output -raw kubeconfig > $(KUBECONFIG)
 	@chmod 600 $(KUBECONFIG)
@@ -184,7 +191,7 @@ _kubeconfig:
 	$(K) wait node --all --for=condition=Ready --timeout=300s
 
 _secrets:
-	@echo -e "$(G)▶ 3/6 Secrets...$(N)"
+	@echo -e "$(G)▶ 3/7 Secrets...$(N)"
 	@if [ ! -f $(ENV_FILE) ]; then \
 	  printf 'PG_PASSWORD=%s\nMCP_HMAC_PEPPER=%s\nMCP_CONTENT_KEY=%s\nMCP_JWT_SECRET=%s\n' \
 	    "$$(openssl rand -hex 24)" \
@@ -209,10 +216,21 @@ _secrets:
 	    --dry-run=client -o yaml | $(K) apply -f -
 
 _postgresql:
-	@echo -e "$(G)▶ 4/6 Installing PostgreSQL (pgvector/pg16)...$(N)"
+	@echo -e "$(G)▶ 4/7 Installing PostgreSQL (pgvector/pg16)...$(N)"
 	$(H) uninstall postgresql --namespace $(NS) 2>/dev/null || true
 	$(K) apply -f k8s/deps/postgresql-pgvector.yaml
 	$(K) rollout status statefulset/postgresql -n $(NS) --timeout=5m
+
+_observability:
+	@echo -e "$(G)▶ 5/7 Installing observability (Prometheus + exporters)...$(N)"
+	$(K) apply -f k8s/deps/prometheus.yaml
+	$(K) apply -f k8s/deps/node-exporter.yaml
+	$(K) apply -f k8s/deps/kube-state-metrics.yaml
+	$(K) apply -f k8s/deps/postgres-exporter.yaml
+	$(K) rollout status statefulset/prometheus       -n $(NS) --timeout=2m
+	$(K) rollout status daemonset/node-exporter      -n $(NS) --timeout=2m
+	$(K) rollout status deployment/kube-state-metrics -n $(NS) --timeout=2m
+	$(K) rollout status deployment/postgres-exporter -n $(NS) --timeout=2m
 
 _ingress:
 	@if grep -qE 'your-domain\.com|your-email@example' k8s/app/ingress.yaml k8s/app/cert-manager-issuer.yaml; then \
@@ -262,7 +280,7 @@ _ingress-ip:
 	  echo -e "  → Next: edit k8s/app/ingress.yaml + cert-manager-issuer.yaml, then: make _ingress"
 
 _app:
-	@echo -e "$(G)▶ 5/6 Deploying gateway...$(N)"
+	@echo -e "$(G)▶ 6/7 Deploying gateway...$(N)"
 	$(K) apply -f k8s/app/namespace.yaml
 	$(K) apply -f k8s/deps/tei-deployment.yaml
 	$(K) apply -f k8s/app/serviceaccount.yaml

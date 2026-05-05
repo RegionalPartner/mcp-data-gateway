@@ -32,6 +32,9 @@ public class SecurityConfig {
                         // ASYNC dispatches here. The original REQUEST was already authenticated.
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        // OBS-001: Prometheus metrics scraped in-cluster, gated by NetworkPolicy.
+                        // Aggregate counters only — no tenant identifiers (see McpMetrics).
+                        .requestMatchers("/actuator/prometheus").permitAll()
                         .requestMatchers("/error").permitAll()
                         // OAuth 2.0 endpoints — ApiKeyFilter skips these; auth is the OAuth flow itself
                         .requestMatchers("/.well-known/oauth-authorization-server",

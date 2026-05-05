@@ -130,6 +130,14 @@ class ApiKeyFilterIT extends AbstractIntegrationTest {
     // -------------------------------------------------------------------------
 
     @Test
+    void prometheusEndpoint_unauthenticatedReturns200() throws Exception {
+        // OBS-001: Prometheus scrapes from inside the cluster without credentials,
+        // gated by NetworkPolicy. Endpoint must be reachable without X-API-Key.
+        mockMvc.perform(get("/actuator/prometheus"))
+               .andExpect(status().isOk());
+    }
+
+    @Test
     void prometheusEndpoint_exposesLabelledAuthFailureCounter() throws Exception {
         // Trigger an auth failure with a known reason so the counter has at least
         // one observed sample with the expected tag.
@@ -139,9 +147,8 @@ class ApiKeyFilterIT extends AbstractIntegrationTest {
                        .content(MCP_TOOLS_LIST))
                .andExpect(status().isUnauthorized());
 
-        // Scrape /actuator/prometheus — requires ADMIN per SEC-015.
-        String body = mockMvc.perform(get("/actuator/prometheus")
-                       .header("X-API-Key", "demo-admin-key-001"))
+        // Scrape /actuator/prometheus — permitted in-cluster (OBS-001), no auth.
+        String body = mockMvc.perform(get("/actuator/prometheus"))
                .andExpect(status().isOk())
                .andReturn()
                .getResponse()

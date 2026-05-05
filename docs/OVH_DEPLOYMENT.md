@@ -732,6 +732,35 @@ re-apply Terraform. This is rare but can happen during OVH platform maintenance.
 
 ---
 
+## Observability
+
+`make up` provisions an in-cluster Prometheus alongside the gateway, scraping five
+targets every 30 seconds. Storage is a 1 Gi PVC with 7-day retention — survives pod
+restart, dies with `make down`.
+
+| Target | Source | What you get |
+|---|---|---|
+| `mcp-gateway` | `/actuator/prometheus` | JVM heap/GC, HTTP request histograms, Hikari pool, Spring AI client latency, `mcp_tool_calls_total{tool, outcome}`, `mcp_auth_failures_total{reason}`, `mcp_rate_limit_exceeded_total` |
+| `node-exporter` (DaemonSet) | host `/proc`, `/sys` | Per-node CPU, memory, disk, network |
+| `kube-state-metrics` | k8s API | Pod restart counts, deployment status, replica counts |
+| `postgres-exporter` | live PG | Connection counts, lock waits, query throughput |
+| `prometheus` | self | Scrape success/failure |
+
+Access:
+
+```bash
+make open-prometheus      # port-forward → http://localhost:9090
+```
+
+`/targets` should show all five jobs as `UP`. `up{job="mcp-gateway"}` evaluates `1`.
+
+Disabling: drop `_observability` from the `up:` chain in `Makefile`. Removing the
+deployments from a running cluster: `kubectl delete -n mcp-demo -f k8s/deps/{prometheus,node-exporter,kube-state-metrics,postgres-exporter}.yaml`.
+
+Public exposure: `/actuator/prometheus` on the gateway is currently reachable via
+the public ingress (no auth — content is aggregate counters, no tenant identifiers).
+Lockdown via nginx annotation is a tracked follow-up.
+
 ## Cost reference (OVH GRA7, 2025 prices)
 
 | Resource | Spec | Price |

@@ -1,0 +1,63 @@
+---
+# Headless Service — Prometheus discovers each pod as a separate target via
+# kubernetes_sd_configs (role: endpoints, kept by service name "node-exporter").
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-exporter
+  namespace: mcp-demo
+  labels:
+    app: node-exporter
+spec:
+  clusterIP: None
+  selector:
+    app: node-exporter
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: 9100
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  namespace: mcp-demo
+spec:
+  selector:
+    matchLabels:
+      app: node-exporter
+  template:
+    metadata:
+      labels:
+        app: node-exporter
+    spec:
+      # Run on every node, including any tainted ones (we expect none on this
+      # OVH cluster, but tolerating future taints costs nothing).
+      tolerations:
+        - operator: Exists
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      containers:
+        - name: node-exporter
+          image: prom/node-exporter:v1.8.2
+          args:
+            - --path.procfs=/host/proc
+            - --path.sysfs=/host/sys
+            - --path.rootfs=/host/root
+            - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+            - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|cgroup.*|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$
+          ports:
+            - name: metrics
+              containerPort: 9100
+          resources:
+            requests: { memory: "32Mi", cpu: "50m" }
+            limits:   { memory: "64Mi", cpu: "200m" }
+          volumeMounts:
+            - { name: proc,   mountPath: /host/proc, readOnly: true }
+            - { name: sys,    mountPath: /host/sys,  readOnly: true }
+            - { name: root,   mountPath: /host/root, readOnly: true, mountPropagation: HostToContainer }
+      volumes:
+        - { name: proc, hostPath: { path: /proc } }
+        - { name: sys,  hostPath: { path: /sys  } }
+        - { name: root, hostPath: { path: /     } }
