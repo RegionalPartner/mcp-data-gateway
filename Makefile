@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: up down open open-prometheus status logs help hooks lint lint-all preview open-preview promote teardown-preview _validate-image _ingress _ingress-ip _observability
+.PHONY: up down open open-prometheus open-grafana status logs help hooks lint lint-all preview open-preview promote teardown-preview _validate-image _ingress _ingress-ip _observability
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TFDIR      := infra/terraform
@@ -41,6 +41,7 @@ help:
 	@echo "  make down             Destroy cluster + stop charges  (~5 min)"
 	@echo "  make open             Port-forward gateway → http://localhost:8080"
 	@echo "  make open-prometheus  Port-forward Prometheus → http://localhost:9090"
+	@echo "  make open-grafana     Port-forward Grafana    → http://localhost:3000"
 	@echo "  make status           Show pod and service status"
 	@echo "  make logs             Tail gateway logs"
 	@echo "  make hooks         Install pre-commit hooks (run once after clone)"
@@ -135,6 +136,7 @@ up: _validate-image _tf-apply _kubeconfig _secrets _postgresql _observability _a
 	@echo -e "$(G)✓ Cluster is up.$(N)"
 	@echo -e "  Local:       make open → http://localhost:8080/mcp"
 	@echo -e "  Prometheus:  make open-prometheus → http://localhost:9090"
+	@echo -e "  Grafana:     make open-grafana    → http://localhost:3000  (anon Viewer; admin pw in $(ENV_FILE))"
 	@echo -e "  Public:      make _ingress  (once you have a domain set in k8s/app/ingress.yaml)"
 
 down:
@@ -155,6 +157,15 @@ open-prometheus:
 	@echo -e "$(G)Prometheus:$(N) http://localhost:9090"
 	@echo    "  Ctrl+C to stop."
 	$(K) port-forward svc/prometheus 9090:9090 -n $(NS)
+
+open-grafana:
+	@echo -e "$(G)Grafana:$(N) http://localhost:3000"
+	@echo -e "  Anonymous Viewer is enabled — no login needed for read-only dashboards."
+	@PW=$$(grep '^GRAFANA_ADMIN_PASSWORD=' $(ENV_FILE) 2>/dev/null | cut -d= -f2-) ; \
+	  [ -n "$$PW" ] && echo -e "  Admin login (edit mode): $(G)admin$(N) / $(G)$$PW$(N)" \
+	                || echo -e "  $(Y)Admin password not found in $(ENV_FILE) — run: make _observability$(N)"
+	@echo    "  Ctrl+C to stop."
+	$(K) port-forward svc/grafana 3000:3000 -n $(NS)
 
 status:
 	$(K) get pods,svc -n $(NS)
@@ -222,15 +233,28 @@ _postgresql:
 	$(K) rollout status statefulset/postgresql -n $(NS) --timeout=5m
 
 _observability:
-	@echo -e "$(G)▶ 5/7 Installing observability (Prometheus + exporters)...$(N)"
+	@echo -e "$(G)▶ 5/7 Installing observability (Prometheus + exporters + Grafana)...$(N)"
 	$(K) apply -f k8s/deps/prometheus.yaml
 	$(K) apply -f k8s/deps/node-exporter.yaml
 	$(K) apply -f k8s/deps/kube-state-metrics.yaml
 	$(K) apply -f k8s/deps/postgres-exporter.yaml
-	$(K) rollout status statefulset/prometheus       -n $(NS) --timeout=2m
-	$(K) rollout status daemonset/node-exporter      -n $(NS) --timeout=2m
+	@# Grafana admin password — generated once, persisted in .deploy.env so the
+	@# UI is reachable across rolling restarts without rotating creds.
+	@if ! grep -q '^GRAFANA_ADMIN_PASSWORD=' $(ENV_FILE) 2>/dev/null; then \
+	  echo "GRAFANA_ADMIN_PASSWORD=$$(openssl rand -hex 16)" >> $(ENV_FILE); \
+	  echo -e "  $(G)Generated GRAFANA_ADMIN_PASSWORD → $(ENV_FILE)$(N)"; \
+	fi
+	@set -a; source $(ENV_FILE); set +a; \
+	  $(K) create secret generic grafana-admin \
+	    --namespace $(NS) \
+	    --from-literal=admin-password="$${GRAFANA_ADMIN_PASSWORD}" \
+	    --dry-run=client -o yaml | $(K) apply -f -
+	$(K) apply -f k8s/deps/grafana.yaml
+	$(K) rollout status statefulset/prometheus        -n $(NS) --timeout=2m
+	$(K) rollout status daemonset/node-exporter       -n $(NS) --timeout=2m
 	$(K) rollout status deployment/kube-state-metrics -n $(NS) --timeout=2m
-	$(K) rollout status deployment/postgres-exporter -n $(NS) --timeout=2m
+	$(K) rollout status deployment/postgres-exporter  -n $(NS) --timeout=2m
+	$(K) rollout status deployment/grafana            -n $(NS) --timeout=2m
 
 _ingress:
 	@if grep -qE 'your-domain\.com|your-email@example' k8s/app/ingress.yaml k8s/app/cert-manager-issuer.yaml; then \
