@@ -64,7 +64,8 @@ dependencies {
     implementation("org.springframework.ai:spring-ai-openai")
 
     // Database
-    runtimeOnly("org.postgresql:postgresql:42.7.3")
+    // 42.7.11 fixes CVE-2026-42198 (HIGH, client-side DoS). Boot 4.1.0-M4 BOM still pins 42.7.10.
+    runtimeOnly("org.postgresql:postgresql:42.7.11")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
 
