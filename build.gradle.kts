@@ -42,7 +42,7 @@ val integrationTestImplementation: Configuration by configurations.getting {
 dependencies {
     // BOMs — Gradle native platform() replaces io.spring.dependency-management (Boot 4.0+)
     implementation(platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES))
-    implementation(platform("org.springframework.ai:spring-ai-bom:2.0.0-M4"))
+    implementation(platform("org.springframework.ai:spring-ai-bom:2.0.0-M6"))
     testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.4"))
 
     // Core
