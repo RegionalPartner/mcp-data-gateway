@@ -304,3 +304,53 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+---
+# Grafana egress: Prometheus on 9090 + DNS. No internet (anonymous metrics
+# and plugin install are disabled in the deployment env).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-grafana-egress
+  namespace: mcp-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Prometheus ingress on 9090 from Grafana (datasource queries).
+# kubectl port-forward bypasses NetworkPolicies, so Prometheus needed no
+# explicit ingress until now — this is the first in-cluster client.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-ingress-from-grafana
+  namespace: mcp-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: grafana
+      ports:
+        - protocol: TCP
+          port: 9090
