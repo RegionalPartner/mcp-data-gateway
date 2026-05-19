@@ -1,15 +1,15 @@
 package io.ancoris.mcp.config;
 
+import com.openai.client.OpenAIClient;
+import com.openai.client.okhttp.OpenAIOkHttpClient;
 import io.micrometer.observation.ObservationRegistry;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.retry.RetryTemplate;
 
 /**
  * Embedding model configuration — HuggingFace Text Embeddings Inference (TEI).
@@ -20,6 +20,10 @@ import org.springframework.core.retry.RetryTemplate;
  *
  * TEI benchmarks at ~20 ms P50 vs ~99 ms for Ollama on the same model (5× improvement).
  * No API key is required; TEI accepts any non-empty string.
+ *
+ * Spring AI 2.0.0-M5 replaced the hand-rolled OpenAiApi with the official
+ * com.openai.client.OpenAIClient SDK; baseUrl is now wired via
+ * OpenAIOkHttpClient.builder().
  */
 @Configuration
 public class TeiConfig {
@@ -29,7 +33,7 @@ public class TeiConfig {
             @Value("${spring.ai.openai.base-url:http://tei:8080}") String baseUrl,
             ObservationRegistry observationRegistry) {
 
-        OpenAiApi openAiApi = OpenAiApi.builder()
+        OpenAIClient openAIClient = OpenAIOkHttpClient.builder()
                 .baseUrl(baseUrl)
                 .apiKey("none")
                 .build();
@@ -39,10 +43,9 @@ public class TeiConfig {
                 .build();
 
         return new OpenAiEmbeddingModel(
-                openAiApi,
+                openAIClient,
                 MetadataMode.EMBED,
                 options,
-                new RetryTemplate(),
                 observationRegistry);
     }
 }

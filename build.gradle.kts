@@ -5,7 +5,7 @@ import com.github.spotbugs.snom.SpotBugsTask
 
 plugins {
     java
-    id("org.springframework.boot") version "4.1.0-M4"
+    id("org.springframework.boot") version "4.1.0-RC1"
     id("jacoco")
     id("checkstyle")
     id("com.github.spotbugs") version "6.5.0"
@@ -42,7 +42,7 @@ val integrationTestImplementation: Configuration by configurations.getting {
 dependencies {
     // BOMs — Gradle native platform() replaces io.spring.dependency-management (Boot 4.0+)
     implementation(platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES))
-    implementation(platform("org.springframework.ai:spring-ai-bom:2.0.0-M4"))
+    implementation(platform("org.springframework.ai:spring-ai-bom:2.0.0-M6"))
     testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.4"))
 
     // Core
@@ -64,7 +64,7 @@ dependencies {
     implementation("org.springframework.ai:spring-ai-openai")
 
     // Database
-    // 42.7.11 fixes CVE-2026-42198 (HIGH, client-side DoS). Boot 4.1.0-M4 BOM still pins 42.7.10.
+    // 42.7.11 fixes CVE-2026-42198 (HIGH, client-side DoS). Boot 4.1.0-RC1 BOM still pins 42.7.10.
     runtimeOnly("org.postgresql:postgresql:42.7.11")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
