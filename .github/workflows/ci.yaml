@@ -125,6 +125,8 @@ jobs:
     name: OWASP Dependency Check
     runs-on: ubuntu-latest
     needs: build-and-test
+    if: github.event_name == 'push'
+    timeout-minutes: 30
     steps:
       - name: Checkout source
         uses: actions/checkout@v6
@@ -141,18 +143,30 @@ jobs:
       - name: Grant Gradle wrapper execute permission
         run: chmod +x gradlew
 
+      - name: Compute NVD cache month
+        id: cache-month
+        run: echo "value=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
       - name: Restore OWASP NVD data cache
-        uses: actions/cache@v4
+        id: nvd-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.gradle/dependency-check-data
-          key: owasp-nvd-${{ runner.os }}-${{ hashFiles('**/build.gradle.kts') }}
-          restore-keys: owasp-nvd-${{ runner.os }}-
+          key: owasp-nvd-${{ runner.os }}-${{ steps.cache-month.outputs.value }}
+          restore-keys: |
+            owasp-nvd-${{ runner.os }}-
 
       - name: Run OWASP dependency check
         run: ./gradlew dependencyCheckAnalyze --no-configuration-cache
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
+
+      - name: Save OWASP NVD data cache
+        if: always() && steps.nvd-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.gradle/dependency-check-data
+          key: owasp-nvd-${{ runner.os }}-${{ steps.cache-month.outputs.value }}
 
       - name: Upload OWASP report
         uses: actions/upload-artifact@v7
