@@ -31,6 +31,7 @@ jobs:
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       checks: write
       contents: read
@@ -106,6 +107,7 @@ jobs:
   rust-tools:
     name: Rust Tools (clippy + test)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout source
         uses: actions/checkout@v6
@@ -197,6 +199,7 @@ jobs:
     name: Dependency Review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: write
@@ -216,6 +219,7 @@ jobs:
     name: Container Build and Trivy Scan
     runs-on: ubuntu-latest
     needs: build-and-test
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -307,6 +311,7 @@ jobs:
     needs: container-build-and-scan
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     environment: ovh-cluster
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -334,6 +339,7 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository)
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -370,6 +376,7 @@ jobs:
     name: Remote E2E Gate (OVH)
     runs-on: ubuntu-latest
     needs: deploy-dev
+    timeout-minutes: 20
     permissions:
       checks: write
       contents: read
