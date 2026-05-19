@@ -39,9 +39,9 @@ public class DatabaseQueryTool {
     public List<Map<String, Object>> queryDatabase(
             @ToolParam(description = "Table name: 'employees' or 'document_chunks'", required = true)
                     String table,
-            @ToolParam(description = "Optional filters as key-value pairs, e.g. department=IT")
+            @ToolParam(description = "Optional filters as key-value pairs, e.g. department=IT", required = false)
                     Map<String, String> filters,
-            @ToolParam(description = "Maximum number of rows to return (1-500, default 100)")
+            @ToolParam(description = "Maximum number of rows to return (1-500, default 100)", required = false)
                     Integer maxRows) {
 
         ApiKey apiKey = currentApiKey();
