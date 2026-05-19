@@ -125,6 +125,7 @@ jobs:
     name: OWASP Dependency Check
     runs-on: ubuntu-latest
     needs: build-and-test
+    if: github.event_name == 'push'
     timeout-minutes: 30
     steps:
       - name: Checkout source
@@ -153,7 +154,6 @@ jobs:
         run: ./gradlew dependencyCheckAnalyze --no-configuration-cache
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
 
       - name: Upload OWASP report
         uses: actions/upload-artifact@v7
