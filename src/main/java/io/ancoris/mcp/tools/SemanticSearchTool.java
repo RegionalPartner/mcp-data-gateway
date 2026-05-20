@@ -62,7 +62,7 @@ public class SemanticSearchTool {
     public List<DataFragment> semanticSearchDocuments(
             @ToolParam(description = "Natural language search query (max 500 characters)", required = true)
                     String query,
-            @ToolParam(description = "Maximum number of fragments to return (1-10)")
+            @ToolParam(description = "Maximum number of fragments to return (1-10)", required = false)
                     Integer maxResults) {
 
         // SEC-018: reject queries that exceed the length limit

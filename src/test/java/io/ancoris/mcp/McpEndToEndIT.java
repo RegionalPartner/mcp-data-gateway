@@ -415,6 +415,47 @@ class McpEndToEndIT extends AbstractIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
+    // Spring AI M6 enforces @ToolParam(required) strictly. A call that omits
+    // an @ToolParam not explicitly marked required=false gets rejected by the
+    // framework before the method body runs, with a misleading "outputSchema"
+    // error. These tests pin the contract: maxResults is genuinely optional
+    // and the method's default (5) kicks in when callers omit it.
+    // -----------------------------------------------------------------------
+
+    @Test
+    void searchDocuments_omittedMaxResults_usesDefault() {
+        String body = call(ADMIN_KEY,
+                toolCall("search_documents", "{\"query\":\"recrutement\"}"))
+                .getBody();
+
+        assertThat(body)
+                .as("framework must not reject the call for omitting maxResults")
+                .doesNotContain("outputSchema")
+                .doesNotContain("Exception");
+        assertThat(body)
+                .as("ADMIN must still see CONFIDENTIAL content with the default limit")
+                .contains("CONFIDENTIAL");
+    }
+
+    @Test
+    void semanticSearch_omittedMaxResults_usesDefault() {
+        when(embeddingModel.embed(anyString())).thenReturn(SEMANTIC_VECTOR);
+
+        String body = call(ADMIN_KEY,
+                toolCall("semantic_search_documents",
+                        "{\"query\":\"confidential semantic test\"}"))
+                .getBody();
+
+        assertThat(body)
+                .as("framework must not reject the call for omitting maxResults")
+                .doesNotContain("outputSchema")
+                .doesNotContain("Exception");
+        assertThat(body)
+                .as("default-limit search must still return semantic-matched content")
+                .contains("e2e confidential semantic unique marker text");
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
