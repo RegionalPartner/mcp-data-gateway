@@ -1,7 +1,7 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
 # rust:*-alpine uses musl libc — Rust produces statically linked binaries by default,
 # matching the FROM scratch final image (no glibc, no shell, zero attack surface).
-FROM rust:1.92-alpine AS builder
+FROM rust:1.95-alpine AS builder
 
 # musl-dev: C headers required by ring's build script (getrandom syscall wrappers).
 RUN apk add --no-cache musl-dev

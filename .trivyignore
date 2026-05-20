@@ -9,3 +9,29 @@
 # Review: 2026-06-01
 CVE-2026-34483
 CVE-2026-34487
+
+# CVE-2026-41284 — Tomcat HIGH: Allocation of Resources Without Limits or Throttling
+# CVE-2026-41293 — Tomcat CRITICAL: Improper Input Validation
+# CVE-2026-42498 — Tomcat: HTTP Authentication Header exposure during WebSocket upgrade
+# CVE-2026-43512 — Tomcat: Authentication Bypass in digest auth (DEPRECATED upstream)
+# CVE-2026-43513 — Tomcat: Improper Handling of Case Sensitivity in LockOutRealm
+# CVE-2026-43515 — Tomcat CRITICAL: Improper Authorization when multiple security
+#                  constraints apply to overlapping URL patterns. Fixed in 11.0.22.
+# All in org.apache.tomcat.embed:tomcat-embed-core shipped by Spring Boot 4.1.0-RC1.
+# Boot 4.1 will pull a patched Tomcat once 11.0.22+ propagates through the BOM.
+# Accepted as residual risk for the demo cluster:
+#   - All endpoints require Bearer API key or OAuth (ApiKeyFilter at chain top, no
+#     anonymous auth surface for 43512 digest-auth bypass or 43515 constraint bypass)
+#   - App uses Spring Security for authz, not Tomcat <security-constraint> XML
+#     config — 43515 affects Tomcat's own constraint matcher which we don't use
+#   - RateLimiterFilter caps the resource-exhaustion vector for 41284
+#   - WebSocket upgrade not exposed by any MCP tool (42498 inert in current config)
+#   - Cluster behind OVH LoadBalancer, no public ingress for unauthenticated paths
+# Remove when Spring Boot 4.1 GA ships with Tomcat 11.0.22+.
+# Review: 2026-07-01
+CVE-2026-41284
+CVE-2026-41293
+CVE-2026-42498
+CVE-2026-43512
+CVE-2026-43513
+CVE-2026-43515

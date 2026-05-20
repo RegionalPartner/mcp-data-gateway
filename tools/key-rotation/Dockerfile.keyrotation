@@ -1,6 +1,6 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
 # rust:*-alpine uses musl libc — Rust produces statically linked binaries by default.
-FROM rust:1.92-alpine AS builder
+FROM rust:1.95-alpine AS builder
 
 RUN apk add --no-cache musl-dev
 
