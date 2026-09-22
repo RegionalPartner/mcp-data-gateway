@@ -22,8 +22,8 @@ de nouveaux identifiants API, un nouveau bucket d'état Terraform et un nouveau
   (tests de bout en bout distants) dans `.github/workflows/ci.yaml`.
 - Section « démo en ligne » des README et des guides de prise en main, remplacée
   par le mode local (`docker compose` + profil `dev`).
-- Secret GitHub `OVH_KUBECONFIG`. L'environnement `ovh-cluster` est conservé pour
-  l'historique des déploiements.
+- Secret GitHub `OVH_KUBECONFIG` : à supprimer (kubeconfig d'un cluster disparu).
+  L'environnement `ovh-cluster` est conservé pour l'historique des déploiements.
 
 ## Ce qui reste valable
 
