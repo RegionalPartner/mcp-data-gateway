@@ -21,7 +21,7 @@ The data ingestion side is intentionally not part of this release — structurin
 
 ## Contents
 
-- [Live demo](#live-demo)
+- [Demo](#demo)
 - [What it does](#what-it-does)
 - [For IT & security leadership](#for-it--security-leadership)
 - [Security model](#security-model)
@@ -32,21 +32,17 @@ The data ingestion side is intentionally not part of this release — structurin
 
 ---
 
-## Live demo
+## Demo
 
-A running instance with anonymised sample data is available at:
-
-```
-https://mcp.37.59.24.118.nip.io
-```
-
-Connect it to Claude Code:
+The hosted demo on OVHcloud was shut down in September 2026 — the public `nip.io` URL that used to appear here no longer answers. To try the gateway, run it locally (PostgreSQL + Ollama via Docker Compose, insecure `dev` profile) and point Claude Code at it:
 
 ```bash
-claude mcp add mcp-data-gateway --transport http https://mcp.37.59.24.118.nip.io/mcp
+docker compose up -d
+SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
+claude mcp add mcp-data-gateway --transport http http://localhost:8080/mcp
 ```
 
-Demo keys:
+Demo keys (pre-seeded — local use only, rotate before any real deployment):
 
 | Key | Role | What you can see |
 |-----|------|-----------------|
@@ -54,6 +50,8 @@ Demo keys:
 | `demo-admin-key-001` | ADMIN | All documents including CONFIDENTIAL, full employee table |
 
 Try asking: *"List the available data sources"* or *"Search for documents about HR policy"*.
+
+To host your own instance, follow the [OVH deployment guide](docs/OVH_DEPLOYMENT.md).
 
 ---
 
@@ -179,7 +177,7 @@ curl -H "X-API-Key: demo-readonly-key-001" http://localhost:8080/actuator/health
 
 | Document | What it covers |
 |----------|---------------|
-| [Getting started](docs/GETTING_STARTED.md) | Step-by-step guide — connect Claude Code to the live demo |
+| [Getting started](docs/GETTING_STARTED.md) | Step-by-step guide — connect Claude Code to a running gateway |
 | [Configuration](docs/CONFIGURATION.md) | All environment variables, dev profile, secret generation |
 | [Security hardening](docs/SECURITY_HARDENING.md) | Threat model, HMAC auth, RLS, AES-256 encryption, dual audit sinks |
 | [OVH deployment](docs/OVH_DEPLOYMENT.md) | Full Kubernetes / Terraform walkthrough |

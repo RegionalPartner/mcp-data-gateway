@@ -1,6 +1,8 @@
 # MCP Data Gateway — Prise en main
 
-Guide pas-à-pas pour connecter un client IA à la passerelle de démonstration.
+Guide pas-à-pas pour connecter un client IA à une passerelle en fonctionnement.
+
+> **Note (septembre 2026) :** la démo hébergée a été arrêtée. Ce guide suppose désormais une passerelle lancée sur votre machine (`docker compose up -d`, puis `SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun` — voir le README) ou votre propre déploiement ; adaptez l'URL en conséquence.
 Aucune compétence technique requise.
 
 **Clients testés :** Claude Code (CLI) · claude.ai · Mistral Le Chat
@@ -42,7 +44,7 @@ Ouvrez un terminal et lancez `claude` pour vérifier que l'installation fonction
 Exécutez cette commande une seule fois dans votre terminal :
 
 ```bash
-claude mcp add mcp-data-gateway --transport http https://mcp.37.59.24.118.nip.io/mcp
+claude mcp add mcp-data-gateway --transport http http://localhost:8080/mcp
 ```
 
 Puis démarrez Claude Code :
@@ -170,17 +172,19 @@ Que dit la politique RH sur le recrutement ?
 
 ## Autres clients testés
 
+> Ces clients web ne peuvent pas joindre `localhost` — utilisez l'URL publique de votre propre déploiement (voir [Déploiement OVH](OVH_DEPLOYMENT.md)).
+
 ### claude.ai
 
 1. Ouvrez [claude.ai](https://claude.ai) et allez dans **Paramètres → Intégrations**
-2. Ajoutez un serveur MCP avec l'URL `https://mcp.37.59.24.118.nip.io/mcp`
+2. Ajoutez un serveur MCP avec l'URL `http://localhost:8080/mcp`
 3. Claude vous demandera de vous authentifier — saisissez l'une des clés de démo
 4. Démarrez une conversation et essayez : *"Quelles données sont disponibles dans la passerelle ?"*
 
 ### Mistral Le Chat
 
 1. Ouvrez [chat.mistral.ai](https://chat.mistral.ai) et allez dans **Paramètres → Serveurs MCP**
-2. Ajoutez l'URL `https://mcp.37.59.24.118.nip.io/mcp`
+2. Ajoutez l'URL `http://localhost:8080/mcp`
 3. Authentifiez-vous avec une clé de démo lorsque demandé
 4. Démarrez une conversation et essayez les mêmes exemples
 

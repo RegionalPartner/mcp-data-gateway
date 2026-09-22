@@ -21,7 +21,7 @@ Le côté ingestion des données n'est intentionnellement pas inclus dans cette 
 
 ## Sommaire
 
-- [Démo en ligne](#démo-en-ligne)
+- [Démo](#démo)
 - [Ce que ça fait](#ce-que-ça-fait)
 - [Pour les DSI et responsables sécurité](#pour-les-dsi-et-responsables-sécurité)
 - [Modèle de sécurité](#modèle-de-sécurité)
@@ -32,21 +32,17 @@ Le côté ingestion des données n'est intentionnellement pas inclus dans cette 
 
 ---
 
-## Démo en ligne
+## Démo
 
-Une instance avec des données anonymisées est disponible à :
-
-```
-https://mcp.37.59.24.118.nip.io
-```
-
-Connexion via Claude Code :
+La démo hébergée sur OVHcloud a été arrêtée en septembre 2026 — l'URL publique `nip.io` qui figurait ici ne répond plus. Pour essayer la passerelle, lancez-la en local (PostgreSQL + Ollama via Docker Compose, profil `dev` non sécurisé) et connectez-y Claude Code :
 
 ```bash
-claude mcp add mcp-data-gateway --transport http https://mcp.37.59.24.118.nip.io/mcp
+docker compose up -d
+SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
+claude mcp add mcp-data-gateway --transport http http://localhost:8080/mcp
 ```
 
-Clés de démo :
+Clés de démo (pré-chargées — usage local uniquement, à changer avant tout vrai déploiement) :
 
 | Clé | Rôle | Données accessibles |
 |-----|------|---------------------|
@@ -54,6 +50,8 @@ Clés de démo :
 | `demo-admin-key-001` | ADMIN | Tous les documents y compris CONFIDENTIAL, table employés complète |
 
 Essayez : *"Liste les sources de données disponibles"* ou *"Cherche des documents sur la politique RH"*.
+
+Pour héberger votre propre instance, suivez le [guide de déploiement OVH](docs/OVH_DEPLOYMENT.md).
 
 ---
 
@@ -169,7 +167,7 @@ curl -H "X-API-Key: demo-readonly-key-001" http://localhost:8080/actuator/health
 
 | Document | Contenu |
 |----------|---------|
-| [Démarrage guidé](docs/GETTING_STARTED.fr.md) | Guide pas-à-pas — connecter Claude Code à la démo |
+| [Démarrage guidé](docs/GETTING_STARTED.fr.md) | Guide pas-à-pas — connecter Claude Code à une passerelle en fonctionnement |
 | [Configuration](docs/CONFIGURATION.md) | Variables d'environnement, profil dev, génération des secrets |
 | [Sécurité](docs/SECURITY_HARDENING.md) | Modèle de menace, HMAC, RLS, AES-256, double piste d'audit |
 | [Déploiement OVH](docs/OVH_DEPLOYMENT.md) | Guide Kubernetes / Terraform complet |
