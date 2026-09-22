@@ -60,6 +60,8 @@ make hooks
 
 ## OVH cluster operations
 
+> **Decommissioned on 2026-09-22.** The reference cluster and its OVH Public Cloud project no longer exist; the kubeconfig, `.deploy.env` and the Terraform state bucket are gone, and CI no longer deploys anywhere. `make up` would provision a brand-new cluster and needs fresh OVH API credentials plus a new state bucket (see `docs/OVH_DEPLOYMENT.md`).
+
 The Makefile wraps all cluster operations. Secrets are auto-generated on first `make up` and persisted in `.deploy.env` (gitignored). **Loss of `MCP_CONTENT_KEY` makes encrypted document chunks permanently unrecoverable.**
 
 ```bash

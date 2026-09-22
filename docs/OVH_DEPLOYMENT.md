@@ -1,5 +1,7 @@
 # Deploying to OVHcloud — Step-by-Step Guide
 
+> **Status (September 2026):** the reference demo cluster this guide was written against has been decommissioned and its OVH Public Cloud project closed. The guide remains valid for deploying your own instance from scratch.
+
 > Complete walkthrough from zero OVH account to a running Kubernetes cluster.
 > Written for beginners — every step is explained, nothing is assumed.
 

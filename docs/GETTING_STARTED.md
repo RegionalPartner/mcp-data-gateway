@@ -1,6 +1,8 @@
 # MCP Data Gateway — Getting Started
 
-A step-by-step guide to connecting an AI client to the live demo gateway.
+A step-by-step guide to connecting an AI client to a running gateway.
+
+> **Note (September 2026):** the hosted demo has been shut down. This guide now assumes a gateway running on your machine (`docker compose up -d`, then `SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun` — see the README) or your own deployment; adapt the URL accordingly.
 No technical background required.
 
 **Tested clients:** Claude Code (CLI) · claude.ai · Mistral Le Chat
@@ -42,7 +44,7 @@ Open a terminal and run `claude` to confirm it works.
 Run this command once in your terminal:
 
 ```bash
-claude mcp add mcp-data-gateway --transport http https://mcp.37.59.24.118.nip.io/mcp
+claude mcp add mcp-data-gateway --transport http http://localhost:8080/mcp
 ```
 
 Then start Claude Code:
@@ -170,17 +172,19 @@ What does the HR policy say about recruitment?
 
 ## Other tested clients
 
+> These web clients cannot reach `localhost` — use the public URL of your own deployment instead (see [OVH deployment](OVH_DEPLOYMENT.md)).
+
 ### claude.ai
 
 1. Open [claude.ai](https://claude.ai) and go to **Settings → Integrations**
-2. Add a new MCP server with URL `https://mcp.37.59.24.118.nip.io/mcp`
+2. Add a new MCP server with URL `http://localhost:8080/mcp`
 3. Claude will prompt you to authenticate — enter one of the demo keys
 4. Start a new conversation and try: *"What data is available in the gateway?"*
 
 ### Mistral Le Chat
 
 1. Open [chat.mistral.ai](https://chat.mistral.ai) and go to **Settings → MCP Servers**
-2. Add URL `https://mcp.37.59.24.118.nip.io/mcp`
+2. Add URL `http://localhost:8080/mcp`
 3. Authenticate with a demo key when prompted
 4. Start a conversation and try the same example queries
 
